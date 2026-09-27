@@ -1,0 +1,312 @@
+import type { PoolConnection, RowDataPacket } from 'mysql2/promise';
+import { getPool, withTransaction } from '../database/pool';
+import { randomUUID } from 'node:crypto';
+import { recordCharacterOperation } from './character-operation.service';
+import { readRuleState, visibleResidentBuff } from './combat-rule-registry';
+import { assertCombatLoadoutMutable } from './combat-loadout-lock.service';
+
+type CharacterRow = RowDataPacket & { id: number };
+type ActionRow = RowDataPacket & { sequence_no: number; skill_id: number | null; name: string | null };
+const recordAutoConfiguration=async(connection:PoolConnection,characterId:number,mode:AutoBattleMode,summary:string,detail:Record<string,unknown>)=>recordCharacterOperation(connection,{characterId,kind:'combat.auto_config_changed',source:{system:'auto_battle_config',id:randomUUID(),step:'changed'},outcome:'调整',summary,detail:{mode,...detail}});
+type SettingRow = RowDataPacket & { enabled: number; default_encounter_action?: 'battle' | 'persuade'; auto_potion_enabled: number; hp_threshold: number; hp_item_id: number | null; hp_item_name: string | null; mp_threshold: number; mp_item_id: number | null; mp_item_name: string | null };
+type AutoCombatStateRow = RowDataPacket & { character_id: number; qq_user_id?: string; enabled: number; auto_potion_enabled: number; hp_threshold: number; hp_item_id: number | null; mp_threshold: number; mp_item_id: number | null; turn_no: number; current_hp: number; current_mp: number; hp_max: number; mp_max: number; selected_target_id?: number | null; cooldowns?: unknown };
+type AutoCombatAction = { type: 'attack' | 'defend' } | { type: 'skill'; skillId: number } | { type: 'item'; itemId: number };
+export type AutoBattleMode = 'pve' | 'pvp';
+const autoTables = (mode: AutoBattleMode) => mode === 'pvp'
+  ? { settings: 'player_pvp_auto_battle_settings', actions: 'player_pvp_auto_battle_actions', quick: 'player_pvp_auto_battle_quick_setup' }
+  : { settings: 'player_auto_battle_settings', actions: 'player_auto_battle_actions', quick: 'player_auto_battle_quick_setup' };
+
+const characterIdFor = async (qqUserId: string) => {
+  const pool = await getPool();
+  const [rows] = await pool.execute<CharacterRow[]>('SELECT c.id FROM characters c JOIN players p ON p.id=c.player_id WHERE p.qq_user_id=? LIMIT 1', [qqUserId]);
+  if (!rows[0]) throw new Error('请先发送“注册”创建角色。');
+  return Number(rows[0].id);
+};
+
+const mutableCharacterIdFor = async (connection: PoolConnection, qqUserId: string) => {
+  const [rows] = await connection.execute<CharacterRow[]>('SELECT c.id FROM characters c JOIN players p ON p.id=c.player_id WHERE p.qq_user_id=? LIMIT 1 FOR UPDATE', [qqUserId]);
+  if (!rows[0]) throw new Error('请先发送“注册”创建角色。');
+  const characterId = Number(rows[0].id);
+  await assertCombatLoadoutMutable(connection, characterId);
+  return characterId;
+};
+
+const ensureSettings = async (characterId: number, mode: AutoBattleMode = 'pve') => {
+  const pool = await getPool();
+  await pool.execute(`INSERT IGNORE INTO ${autoTables(mode).settings} (character_id) VALUES (?)`, [characterId]);
+};
+
+export const autoBattleConfig = async (qqUserId: string, mode: AutoBattleMode = 'pve') => {
+  const characterId = await characterIdFor(qqUserId); await ensureSettings(characterId, mode); const pool = await getPool(); const tables = autoTables(mode);
+  const [settings] = await pool.execute<SettingRow[]>(`SELECT s.*,hp.name AS hp_item_name,mp.name AS mp_item_name FROM ${tables.settings} s
+    LEFT JOIN item_definitions hp ON hp.id=s.hp_item_id LEFT JOIN item_definitions mp ON mp.id=s.mp_item_id WHERE s.character_id=?`, [characterId]);
+  const [actions] = await pool.execute<ActionRow[]>(`SELECT a.sequence_no,a.skill_id,sd.name FROM ${tables.actions} a LEFT JOIN skill_definitions sd ON sd.id=a.skill_id WHERE a.character_id=? ORDER BY a.sequence_no`, [characterId]);
+  return { characterId, mode, settings: settings[0], actions: actions.map(action => ({ sequence: Number(action.sequence_no), skillId: action.skill_id === null ? null : Number(action.skill_id), name: action.name ?? '普通攻击' })) };
+};
+
+export const setAutoBattleEnabled = async (qqUserId: string, enabled: boolean, mode: AutoBattleMode = 'pve') => withTransaction(async connection => {
+  const characterId = await mutableCharacterIdFor(connection, qqUserId);
+  const [changed]=await connection.execute<any>(`INSERT INTO ${autoTables(mode).settings} (character_id,enabled) VALUES (?,?) ON DUPLICATE KEY UPDATE enabled=VALUES(enabled)`, [characterId, enabled ? 1 : 0]);
+  if(Number(changed.affectedRows)>0)await recordAutoConfiguration(connection,characterId,mode,`${enabled?'启用':'停用'}自动战斗`,{setting:'enabled',enabled});
+  return enabled;
+});
+
+/** PVE 自动寻怪遇敌时的默认决策；PVP 不使用该配置。 */
+export const toggleAutoBattleEncounterAction = async (qqUserId: string) => withTransaction(async connection => {
+  const characterId = await mutableCharacterIdFor(connection, qqUserId);
+  await connection.execute('INSERT IGNORE INTO player_auto_battle_settings (character_id) VALUES (?)', [characterId]);
+  await connection.execute("UPDATE player_auto_battle_settings SET default_encounter_action=IF(default_encounter_action='battle','persuade','battle') WHERE character_id=?", [characterId]);
+  const [settings] = await connection.execute<(RowDataPacket & { default_encounter_action: 'battle' | 'persuade' })[]>('SELECT default_encounter_action FROM player_auto_battle_settings WHERE character_id=?', [characterId]);
+  await recordAutoConfiguration(connection,characterId,'pve','调整自动寻怪决策',{setting:'default_encounter_action',action:settings[0]?.default_encounter_action??'battle'});
+  return settings[0]?.default_encounter_action ?? 'battle';
+});
+
+export const setAutoPotionEnabled = async (qqUserId: string, enabled: boolean, mode: AutoBattleMode = 'pve') => withTransaction(async connection => {
+  const characterId = await mutableCharacterIdFor(connection, qqUserId);
+  const [changed]=await connection.execute<any>(`INSERT INTO ${autoTables(mode).settings} (character_id,auto_potion_enabled) VALUES (?,?) ON DUPLICATE KEY UPDATE auto_potion_enabled=VALUES(auto_potion_enabled)`, [characterId, enabled ? 1 : 0]);
+  if(Number(changed.affectedRows)>0)await recordAutoConfiguration(connection,characterId,mode,`${enabled?'启用':'停用'}自动药剂`,{setting:'auto_potion_enabled',enabled});
+  return enabled;
+});
+
+export const autoBattleSkills = async (qqUserId: string, page = 1, keyword = '') => {
+  const characterId = await characterIdFor(qqUserId); const pool = await getPool(); const like = `%${keyword}%`;
+  const [rows] = await pool.execute<(RowDataPacket & { id: number; name: string })[]>('SELECT s.id,s.name FROM player_skills ps JOIN skill_definitions s ON s.id=ps.skill_id WHERE ps.character_id=? AND s.category IN (\'physical\',\'magic\',\'utility\') AND s.name LIKE ? ORDER BY ps.learned_at,s.id', [characterId, like]);
+  const total = Math.max(1, Math.ceil((rows.length + 1) / 10)); const safePage = Math.max(1, Math.min(total, page));
+  const choices = [{ id: null as number | null, name: '普通攻击' }, ...rows.map(row => ({ id: Number(row.id), name: row.name }))].slice((safePage - 1) * 10, safePage * 10);
+  return { choices, page: safePage, total };
+};
+
+const assertSkill = async (connection: any, characterId: number, skillId: number | null) => {
+  if (skillId === null) return;
+  const [rows] = await connection.execute('SELECT 1 FROM player_skills ps JOIN skill_definitions s ON s.id=ps.skill_id WHERE ps.character_id=? AND ps.skill_id=? AND s.category IN (\'physical\',\'magic\',\'utility\')', [characterId, skillId]) as [RowDataPacket[]];
+  if (!rows[0]) throw new Error('只能配置已经学习的主动技能。');
+};
+
+export const saveAutoBattleAction = async (qqUserId: string, sequence: number, skillId: number | null, mode: AutoBattleMode = 'pve') => withTransaction(async connection => {
+  const characterId = await mutableCharacterIdFor(connection, qqUserId);
+  if (!Number.isInteger(sequence) || sequence < 1 || sequence > 30) throw new Error('出招位置需在 1 至 30 之间。');
+  await assertSkill(connection, characterId, skillId);
+  const [changed]=await connection.execute<any>(`INSERT INTO ${autoTables(mode).actions} (character_id,sequence_no,skill_id) VALUES (?,?,?) ON DUPLICATE KEY UPDATE skill_id=VALUES(skill_id)`, [characterId, sequence, skillId]);
+  if(Number(changed.affectedRows)>0)await recordAutoConfiguration(connection,characterId,mode,`设置自动出招 ${sequence}`,{setting:'action',sequence,skillId});
+});
+
+export const deleteAutoBattleAction = async (qqUserId: string, sequence: number, mode: AutoBattleMode = 'pve') => withTransaction(async connection => {
+  const characterId = await mutableCharacterIdFor(connection, qqUserId);
+  const [deleted]=await connection.execute<any>(`DELETE FROM ${autoTables(mode).actions} WHERE character_id=? AND sequence_no=?`, [characterId, sequence]);
+  if(Number(deleted.affectedRows)>0)await recordAutoConfiguration(connection,characterId,mode,`删除自动出招 ${sequence}`,{setting:'action',sequence,deleted:true});
+});
+
+export const beginAutoBattleQuickSetup = async (qqUserId: string, mode: AutoBattleMode = 'pve') => withTransaction(async connection => {
+  const characterId = await mutableCharacterIdFor(connection, qqUserId);
+  const tables = autoTables(mode); await connection.execute(`DELETE FROM ${tables.actions} WHERE character_id=?`, [characterId]);
+  await connection.execute(`INSERT INTO ${tables.quick} (character_id,next_sequence) VALUES (?,1) ON DUPLICATE KEY UPDATE next_sequence=1`, [characterId]);
+  await recordAutoConfiguration(connection,characterId,mode,'开始快速配置自动战斗',{setting:'quick_setup',phase:'started'});
+  return 1;
+});
+
+export const saveQuickAutoBattleAction = async (qqUserId: string, skillId: number | null, mode: AutoBattleMode = 'pve') => withTransaction(async connection => {
+  const characterId = await mutableCharacterIdFor(connection, qqUserId);
+  const tables = autoTables(mode); const [setup] = await connection.execute<(RowDataPacket & { next_sequence: number })[]>(`SELECT next_sequence FROM ${tables.quick} WHERE character_id=? FOR UPDATE`, [characterId]); if (!setup[0]) throw new Error('请先点击“快速配置”。');
+  const sequence = Number(setup[0].next_sequence); await assertSkill(connection, characterId, skillId);
+  await connection.execute(`INSERT INTO ${tables.actions} (character_id,sequence_no,skill_id) VALUES (?,?,?)`, [characterId, sequence, skillId]);
+  await connection.execute(`UPDATE ${tables.quick} SET next_sequence=next_sequence+1 WHERE character_id=?`, [characterId]);
+  await recordAutoConfiguration(connection,characterId,mode,`快速配置自动出招 ${sequence}`,{setting:'quick_action',sequence,skillId});return sequence + 1;
+});
+
+export const finishAutoBattleQuickSetup = async (qqUserId: string, mode: AutoBattleMode = 'pve') => withTransaction(async connection => {
+  const characterId = await mutableCharacterIdFor(connection, qqUserId);
+  const [finished]=await connection.execute<any>(`DELETE FROM ${autoTables(mode).quick} WHERE character_id=?`, [characterId]);
+  if(Number(finished.affectedRows)>0)await recordAutoConfiguration(connection,characterId,mode,'完成快速配置自动战斗',{setting:'quick_setup',phase:'finished'});
+});
+
+export const autoPotionItems = async (qqUserId: string, page = 1, keyword = '') => {
+  const characterId = await characterIdFor(qqUserId); const pool = await getPool(); const [rows] = await pool.execute<(RowDataPacket & { id: number; name: string })[]>('SELECT i.id,i.name FROM player_inventory pi JOIN item_definitions i ON i.id=pi.item_id WHERE pi.character_id=? AND pi.quantity>0 AND i.item_type=\'consumable\' AND i.item_category=\'药剂\' AND i.name LIKE ? ORDER BY i.id', [characterId, `%${keyword}%`]);
+  const total = Math.max(1, Math.ceil(rows.length / 10)); const safePage = Math.max(1, Math.min(total, page)); return { items: rows.slice((safePage - 1) * 10, safePage * 10).map(row => ({ id: Number(row.id), name: row.name })), page: safePage, total };
+};
+
+export const setAutoPotionThreshold = async (qqUserId: string, kind: 'hp' | 'mp', threshold: number, mode: AutoBattleMode = 'pve') => withTransaction(async connection => {
+  const characterId = await mutableCharacterIdFor(connection, qqUserId);
+  if (!Number.isInteger(threshold) || threshold < 1 || threshold > 99) throw new Error('门槛需要是 1 至 99 的整数百分比。');
+  const [changed]=await connection.execute<any>(`INSERT INTO ${autoTables(mode).settings} (character_id,${kind}_threshold) VALUES (?,?) ON DUPLICATE KEY UPDATE ${kind}_threshold=VALUES(${kind}_threshold)`, [characterId, threshold]);
+  if(Number(changed.affectedRows)>0)await recordAutoConfiguration(connection,characterId,mode,`设置${kind.toUpperCase()}自动药剂门槛`,{setting:`${kind}_threshold`,threshold});
+});
+
+export const setAutoPotionItem = async (qqUserId: string, kind: 'hp' | 'mp', itemId: number | null, mode: AutoBattleMode = 'pve') => withTransaction(async connection => {
+  const characterId = await mutableCharacterIdFor(connection, qqUserId);
+  if (itemId !== null) { const [items] = await connection.execute<RowDataPacket[]>('SELECT 1 FROM player_inventory pi JOIN item_definitions i ON i.id=pi.item_id WHERE pi.character_id=? AND pi.quantity>0 AND i.id=? AND i.item_type=\'consumable\' AND i.item_category=\'药剂\'', [characterId, itemId]); if (!items[0]) throw new Error('背包中没有该药剂。'); }
+  const [changed]=await connection.execute<any>(`INSERT INTO ${autoTables(mode).settings} (character_id,${kind}_item_id) VALUES (?,?) ON DUPLICATE KEY UPDATE ${kind}_item_id=VALUES(${kind}_item_id)`, [characterId, itemId]);
+  if(Number(changed.affectedRows)>0)await recordAutoConfiguration(connection,characterId,mode,`设置${kind.toUpperCase()}自动药剂`,{setting:`${kind}_item_id`,itemId});
+});
+
+/** 自动嗑药优先于常规出招：生命危险时先保命，随后才补充魔力。 */
+const availableAutoPotion = async (pool: Awaited<ReturnType<typeof getPool>>, state: AutoCombatStateRow): Promise<AutoCombatAction | null> => {
+  if (!Number(state.auto_potion_enabled)) return null;
+  const below = (current: number, maximum: number, threshold: number) => maximum > 0 && current * 100 <= maximum * threshold;
+  const preferred = below(Number(state.current_hp), Number(state.hp_max), Number(state.hp_threshold)) ? state.hp_item_id
+    : below(Number(state.current_mp), Number(state.mp_max), Number(state.mp_threshold)) ? state.mp_item_id
+      : null;
+  if (!preferred) return null;
+  const [items] = await pool.execute<RowDataPacket[]>('SELECT 1 FROM player_inventory pi JOIN item_definitions i ON i.id=pi.item_id WHERE pi.character_id=? AND pi.item_id=? AND pi.quantity>0 AND i.item_type=\'consumable\' AND i.item_category=\'药剂\' LIMIT 1', [state.character_id, preferred]);
+  return items[0] ? { type: 'item', itemId: Number(preferred) } : null;
+};
+
+const configuredAutoAction = async (pool: Awaited<ReturnType<typeof getPool>>, state: AutoCombatStateRow): Promise<AutoCombatAction> => {
+  const potion = await availableAutoPotion(pool, state); if (potion) return potion;
+  const [actions] = await pool.execute<(RowDataPacket & { code: string; sequence_no: number; skill_id: number | null; learned_skill_id: number | null })[]>(`SELECT s.code,a.sequence_no,a.skill_id,CASE WHEN s.id IS NULL THEN NULL ELSE ps.skill_id END AS learned_skill_id
+    FROM player_auto_battle_actions a LEFT JOIN player_skills ps ON ps.character_id=a.character_id AND ps.skill_id=a.skill_id
+    LEFT JOIN skill_definitions s ON s.id=a.skill_id AND s.category IN ('physical','magic','utility')
+    WHERE a.character_id=? ORDER BY a.sequence_no`, [state.character_id]);
+  if (!actions.length) return { type: 'attack' };
+  const selected = actions[(Math.max(1, Number(state.turn_no)) - 1) % actions.length];
+  // 技能可能因转职、洗点、冷却、蓝量、武器或职业资源而在本回合无法使用。
+  // 自动战斗只能把本回合临时降为普攻，绝不能写回玩家保存的出招配置。
+  if (selected.skill_id !== null && selected.learned_skill_id === null) {
+    return { type: 'attack' };
+  }
+  const cooldowns = typeof state.cooldowns === 'string' ? JSON.parse(state.cooldowns) : state.cooldowns;
+  if (visibleResidentBuff(readRuleState(cooldowns?.__rules), selected.code, Number(state.turn_no))) return { type: 'attack' };
+  return selected.skill_id === null ? { type: 'attack' } : { type: 'skill', skillId: Number(selected.skill_id) };
+};
+
+/** 当前回合自动战斗的出招；无配置、冷却或蓝量异常由调用方回退至普攻。 */
+export const nextAutoBattleAction = async (qqUserId: string) => {
+  const characterId = await characterIdFor(qqUserId); const pool = await getPool();
+  const [settings] = await pool.execute<AutoCombatStateRow[]>(`SELECT s.*,cs.turn_no,cm.current_hp,cm.current_mp,c.hp_max,c.mp_max
+    FROM player_auto_battle_settings s JOIN combat_members cm ON cm.character_id=s.character_id JOIN combat_sessions cs ON cs.id=cm.session_id AND cs.state='active' AND cs.mode<>'spar' AND NOT EXISTS(SELECT 1 FROM player_leaf_route_battles lb WHERE lb.session_id=cs.id AND lb.state='active' AND lb.wave=1 AND lb.anchor_used=0) JOIN characters c ON c.id=cm.character_id WHERE s.character_id=? LIMIT 1`, [characterId]);
+  const [storyBattle] = await pool.execute<RowDataPacket[]>(`SELECT 1 FROM combat_members cm JOIN combat_sessions cs ON cs.id=cm.session_id AND cs.state='active' AND cs.mode<>'spar' AND NOT EXISTS(SELECT 1 FROM player_leaf_route_battles lb WHERE lb.session_id=cs.id AND lb.state='active' AND lb.wave=1 AND lb.anchor_used=0)
+    JOIN combat_targets ct ON ct.session_id=cs.id JOIN monster_spawns s ON s.id=ct.spawn_id JOIN monster_templates t ON t.id=s.template_id
+    JOIN player_story_progress sp ON sp.character_id=cm.character_id AND sp.story_code='forest_guide' AND sp.status IN ('joined','declined')
+    WHERE cm.character_id=? AND t.code='forest_slime' LIMIT 1`, [characterId]);
+  if (!settings[0] || !settings[0].enabled || storyBattle[0]) return null;
+  return configuredAutoAction(pool, settings[0]);
+};
+
+/**
+ * 读取当前战斗内所有已开启自动战斗、且尚未确认本回合行动的玩家。
+ * 队伍回合由外层逐一提交这些动作；未开启自动的队员不会出现在结果中，
+ * 因而仍会保留给其手动操作。
+ */
+export const pendingPartyAutoBattleActions = async (qqUserId: string) => {
+  const characterId = await characterIdFor(qqUserId); const pool = await getPool();
+  const [members] = await pool.execute<AutoCombatStateRow[]>(`SELECT cm.character_id,p.qq_user_id,cs.turn_no,cm.current_hp,cm.current_mp,cm.selected_target_id,cm.cooldowns,c.hp_max,c.mp_max,
+      settings.enabled,settings.auto_potion_enabled,settings.hp_threshold,settings.hp_item_id,settings.mp_threshold,settings.mp_item_id
+    FROM combat_members mine
+    JOIN combat_sessions cs ON cs.id=mine.session_id AND cs.state='active' AND cs.mode<>'spar' AND NOT EXISTS(SELECT 1 FROM player_leaf_route_battles lb WHERE lb.session_id=cs.id AND lb.state='active' AND lb.wave=1 AND lb.anchor_used=0)
+    JOIN combat_members cm ON cm.session_id=cs.id
+    JOIN characters c ON c.id=cm.character_id
+    JOIN players p ON p.id=c.player_id
+    JOIN player_auto_battle_settings settings ON settings.character_id=cm.character_id AND settings.enabled=1
+    WHERE mine.character_id=? AND cm.is_defeated=0 AND cm.pending_action IS NULL
+      AND NOT EXISTS (SELECT 1 FROM negotiation_sessions n WHERE n.battle_id=cs.id AND n.state='active')
+      AND (JSON_EXTRACT(cs.cooldowns,'$.__bonusPhase') IS NULL OR JSON_EXTRACT(cm.cooldowns,'$.__bonusAction')=1)
+      AND JSON_EXTRACT(cm.cooldowns,'$.__rules.cast') IS NULL
+      AND NOT EXISTS(SELECT 1 FROM combat_targets ct JOIN monster_spawns s ON s.id=ct.spawn_id JOIN monster_templates t ON t.id=s.template_id
+        WHERE ct.session_id=cs.id AND t.code='forest_slime'
+          AND EXISTS(SELECT 1 FROM player_story_progress story WHERE story.character_id=mine.character_id AND story.story_code='forest_guide' AND story.status IN ('joined','declined')))
+    ORDER BY cm.character_id`, [characterId]);
+  const [targets] = await pool.execute<(RowDataPacket & { id: number; spawn_id: number; current_hp: number; is_defeated: number; traits_json: unknown; cooldowns: unknown })[]>(`SELECT ct.spawn_id AS id,ct.spawn_id,ct.is_defeated,s.current_hp,s.traits_json,ct.cooldowns
+    FROM combat_members mine JOIN combat_sessions cs ON cs.id=mine.session_id AND cs.state='active' AND cs.mode<>'spar' AND NOT EXISTS(SELECT 1 FROM player_leaf_route_battles lb WHERE lb.session_id=cs.id AND lb.state='active' AND lb.wave=1 AND lb.anchor_used=0)
+    JOIN combat_targets ct ON ct.session_id=cs.id JOIN monster_spawns s ON s.id=ct.spawn_id
+    WHERE mine.character_id=?`, [characterId]);
+  const jsonObject = (value: unknown) => { if (!value) return {} as Record<string, unknown>; try { return typeof value === 'string' ? JSON.parse(value) : value as Record<string, unknown>; } catch { return {} as Record<string, unknown>; } };
+  const component = (target: { traits_json: unknown }) => {
+    const traits = Array.isArray(target.traits_json) ? target.traits_json : (() => { try { return JSON.parse(String(target.traits_json ?? '[]')); } catch { return []; } })();
+    return Array.isArray(traits) ? traits.find((trait: any) => trait?.code === 'boss_component') as { body_spawn_id?: number; part_key?: string } | undefined : undefined;
+  };
+  // 保持自动战斗目标判定自包含：旧版目标测试会单独提取本函数执行，不能依赖模块外闭包。
+  const kingbeast = (target: { traits_json: unknown }) => {
+    const traits = Array.isArray(target.traits_json) ? target.traits_json : (() => { try { return JSON.parse(String(target.traits_json ?? '[]')); } catch { return []; } })();
+    return Array.isArray(traits) ? traits.find((trait: any) => trait?.code === 'kingbeast_encounter') as { groupId?: string; role?: string } | undefined : undefined;
+  };
+  const kingbeastSelectableTargets = <T extends typeof targets[number]>(rows: T[]) => rows.filter(target => {
+    if (Number(target.is_defeated)) return false;
+    const trait = kingbeast(target); if (trait?.role !== 'king') return true;
+    const cores = rows.filter(candidate => ['king', 'dragon'].includes(String(kingbeast(candidate)?.role ?? '')) && String(kingbeast(candidate)?.groupId ?? '') === String(trait.groupId ?? ''));
+    return cores.length !== 2 || cores.every(candidate => Boolean(jsonObject(candidate.cooldowns).kingbeast_phase_two));
+  });
+  const kingbeastForcedSingleTarget = <T extends typeof targets[number]>(rows: T[]) => {
+    const dragon = rows.find(target => !Number(target.is_defeated) && kingbeast(target)?.role === 'dragon');
+    return dragon && Number(jsonObject(dragon.cooldowns).kingbeast_castling_turns ?? 0) > 0 ? dragon : undefined;
+  };
+  const aliveTargets = kingbeastSelectableTargets(targets);
+  const automaticTargetFor = (member: AutoCombatStateRow) => {
+    const forcedKingbeastTarget = kingbeastForcedSingleTarget(targets);
+    if (forcedKingbeastTarget) return Number(forcedKingbeastTarget.spawn_id);
+    const componentRows = aliveTargets.map(target => ({ target, trait: component(target) })).filter((entry): entry is { target: typeof targets[number]; trait: { body_spawn_id?: number; part_key?: string } } => Boolean(entry.trait));
+    const bodyFor = (entry: { trait: { body_spawn_id?: number } }) => aliveTargets.find(target => Number(target.spawn_id) === Number(entry.trait.body_spawn_id));
+    const urgent = (key: string, predicate: (body: typeof targets[number] | undefined) => boolean) => componentRows.find(entry => entry.trait.part_key === key && predicate(bodyFor(entry)));
+    const memberCooldowns = jsonObject(member.cooldowns);
+    const horn = urgent('gruen_horn', body => Number(jsonObject(body?.cooldowns).boss_component_gruen_horn_charge ?? 0) > 0);
+    const bellows = urgent('valk_bellows', body => Number(jsonObject(body?.cooldowns).regional_valk_heat ?? 0) === 2);
+    const chain = urgent('valk_chain', () => Number(memberCooldowns.boss_component_valk_chain_execute_at ?? 0) > 0);
+    const priority = horn ?? bellows ?? chain
+      ?? componentRows.find(entry => ['gruen_armor', 'valk_armor'].includes(String(entry.trait.part_key)))
+      ?? componentRows.find(entry => ['gruen_arm', 'valk_chain', 'gruen_horn', 'valk_bellows'].includes(String(entry.trait.part_key)));
+    // 已击破的部位仍可能留在成员的选中记录中，不能再交给切换目标接口。
+    const selected = aliveTargets.find(target => Number(target.spawn_id) === Number(member.selected_target_id));
+    return Number(priority?.target.spawn_id ?? selected?.spawn_id ?? aliveTargets[0]?.spawn_id ?? 0) || undefined;
+  };
+  const actions = await Promise.all(members.map(async member => {
+    return { qqUserId: member.qq_user_id!, action: await configuredAutoAction(pool, member), targetId: automaticTargetFor(member) };
+  }));
+  const regionalTarget = aliveTargets.find(target => Boolean(jsonObject(target.cooldowns).regional_encounter_v2));
+  if (regionalTarget) {
+    const { readRegionalState } = await import('./regional-boss-v2');
+    const { planRegionalAuto, regionalActionKind } = await import('./regional-boss-auto');
+    const state = readRegionalState(jsonObject(regionalTarget.cooldowns));
+    if (state) {
+      const [party] = await pool.execute<RowDataPacket[]>(`SELECT cm.character_id,cm.current_hp,cm.current_mp,cm.cooldowns,cm.pending_action,c.hp_max,c.speed,cs.turn_no
+        FROM combat_members mine JOIN combat_sessions cs ON cs.id=mine.session_id AND cs.state='active'
+        JOIN combat_members cm ON cm.session_id=cs.id JOIN characters c ON c.id=cm.character_id
+        WHERE mine.character_id=? AND cm.is_defeated=0 ORDER BY c.speed DESC,cm.character_id`, [characterId]);
+      const [legacy] = await pool.execute<RowDataPacket[]>(`SELECT ce.target_id,e.code,ce.value FROM combat_members mine
+        JOIN combat_status_effects ce ON ce.session_id=mine.session_id AND ce.target_kind='member'
+        JOIN effect_definitions e ON e.id=ce.effect_id WHERE mine.character_id=? AND ce.remaining_turns>0`, [characterId]);
+      const profiles = await Promise.all(party.map(async row => {
+        const cd = jsonObject(row.cooldowns); const rule = readRuleState(cd.__rules);
+        const statuses = [...rule.statuses.filter(effect => effect.until >= Number(row.turn_no)), ...legacy.filter(effect => Number(effect.target_id) === Number(row.character_id))];
+        const [skills] = await pool.execute<RowDataPacket[]>('SELECT s.id,s.code,s.category,s.power,s.mana_cost,ps.quick_slot FROM player_skills ps JOIN skill_definitions s ON s.id=ps.skill_id WHERE ps.character_id=? AND s.category IN (\'physical\',\'magic\',\'utility\') ORDER BY s.mana_cost,s.id', [row.character_id]);
+        const silence = statuses.some(effect => effect.code === 'silence');
+        const ready = skills.filter(skill => !silence && Number(skill.mana_cost) <= Number(row.current_mp) && !Number(cd[String(skill.code)] ?? 0));
+        const index = members.findIndex(member => Number(member.character_id) === Number(row.character_id));
+        let preferred = index >= 0 ? actions[index]!.action : { type: 'attack' as const };
+        const preferredSkillId = preferred.type === 'skill' ? preferred.skillId : 0;
+        if (preferred.type === 'skill' && !ready.some(skill => Number(skill.id) === preferredSkillId)) preferred = { type: 'attack' };
+        const selected = preferred.type === 'skill' ? skills.find(skill => Number(skill.id) === preferred.skillId) : undefined;
+        const pending = jsonObject(row.pending_action); const pendingSkill = skills.find(skill => pending.skillId ? Number(skill.id) === Number(pending.skillId) : Number(skill.quick_slot) === Number(pending.slot));
+        return { key: `member:${row.character_id}`, hp: Number(row.current_hp), hpMax: Number(row.hp_max),
+          shield: statuses.filter(effect => ['shield', 'life_shield'].includes(String(effect.code))).reduce((sum, effect) => sum + Number(effect.value), 0),
+          controlled: statuses.some(effect => ['stun', 'sleep', 'fear', 'petrify', 'charm', 'alchemy_stun', 'hidden_freeze', 'hidden_stun'].includes(String(effect.code))),
+          automatic: index >= 0, preferred, preferredDamaging: selected ? Number(selected.power) > 0 && selected.category !== 'utility' : true,
+          skill: ready[0] ? { id: Number(ready[0].id), damaging: Number(ready[0].power) > 0 && ready[0].category !== 'utility' } : undefined,
+          healingSuppressed: statuses.some(effect => ['valk_heal_seal', 'valk_scorch'].includes(String(effect.code))),
+          cleanse: ready.find(skill => ['purifying_light', 'saint_healer_absolution_hand', 'saint_healer_revival_sanctuary', 'summoner_returning_veil'].includes(String(skill.code))) ? { type: 'skill' as const, skillId: Number(ready.find(skill => ['purifying_light', 'saint_healer_absolution_hand', 'saint_healer_revival_sanctuary', 'summoner_returning_veil'].includes(String(skill.code)))!.id) } : undefined,
+          committed: pending.type ? regionalActionKind({ type: String(pending.type) }, pendingSkill ? Number(pendingSkill.power) > 0 && pendingSkill.category !== 'utility' : true) : undefined };
+      }));
+      const planned = planRegionalAuto(state, profiles, Number(party[0]?.turn_no ?? 1));
+      for (const [index, member] of members.entries()) { const action = planned.get(`member:${member.character_id}`); if (action) actions[index]!.action = action; actions[index]!.targetId = Number(regionalTarget.spawn_id); }
+    }
+  }
+  return actions;
+};
+
+/** 只有存活成员全部为真人且均已开启自动战斗，才允许一次性完成整场结算。 */
+export const isFullPartyAutoBattle = async (qqUserId: string) => {
+  const characterId = await characterIdFor(qqUserId); const pool = await getPool();
+  const [rows] = await pool.execute<(RowDataPacket & { alive_count: number; automated_count: number; story_battle: number })[]>(`SELECT
+      SUM(CASE WHEN cm.is_defeated=0 THEN 1 ELSE 0 END) AS alive_count,
+      SUM(CASE WHEN cm.is_defeated=0 AND c.npc_code IS NULL AND COALESCE(settings.enabled,0)=1 THEN 1 ELSE 0 END) AS automated_count,
+      MAX(CASE WHEN t.code='forest_slime' AND story.story_code IS NOT NULL THEN 1 ELSE 0 END) AS story_battle
+    FROM combat_members mine
+    JOIN combat_sessions cs ON cs.id=mine.session_id AND cs.state='active' AND cs.mode<>'spar' AND NOT EXISTS(SELECT 1 FROM player_leaf_route_battles lb WHERE lb.session_id=cs.id AND lb.state='active' AND lb.wave=1 AND lb.anchor_used=0)
+    JOIN combat_members cm ON cm.session_id=cs.id
+    JOIN characters c ON c.id=cm.character_id
+    LEFT JOIN player_auto_battle_settings settings ON settings.character_id=cm.character_id
+    LEFT JOIN combat_targets ct ON ct.session_id=cs.id
+    LEFT JOIN monster_spawns s ON s.id=ct.spawn_id
+    LEFT JOIN monster_templates t ON t.id=s.template_id
+    LEFT JOIN player_story_progress story ON story.character_id=mine.character_id AND story.story_code='forest_guide' AND story.status IN ('joined','declined')
+    WHERE mine.character_id=?`, [characterId]);
+  const row = rows[0];
+  return Boolean(row) && Number(row.alive_count) > 0 && Number(row.alive_count) === Number(row.automated_count) && !Number(row.story_battle);
+};

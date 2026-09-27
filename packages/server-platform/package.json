@@ -1,0 +1,15 @@
+{
+  "name": "@alemonjs/server",
+  "version": "0.1.0",
+  "description": "Local AlemonJS platform adapter for the FantasyFinal server process.",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package": "./package.json"
+  },
+  "peerDependencies": {
+    "alemonjs": "^2.1.0"
+  }
+}
