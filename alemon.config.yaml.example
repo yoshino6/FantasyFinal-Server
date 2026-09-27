@@ -1,0 +1,31 @@
+# 复制为 alemon.config.yaml。这个文件只给 server 使用。
+mysql:
+  host: 127.0.0.1
+  port: 3306
+  user: fantasyfinal_core
+  password: replace-with-core-db-password
+  database: fantasy_final
+redis:
+  host: 127.0.0.1
+  port: 6379
+  user: default
+  db: 0
+
+login: "server"
+port: 17117
+
+FantasyFinal:
+  runtime: core
+  appApiServer:
+    enabled: true
+    listenHost: "127.0.0.1"
+    port: 17117
+  adminWeb:
+    enabled: true
+    listenHost: "127.0.0.1"
+    port: 17118
+  coreApi:
+    enabled: true
+    listenHost: "127.0.0.1"
+    port: 17200
+    serviceToken: "replace-with-shared-core-service-token"

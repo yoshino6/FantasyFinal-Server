@@ -1,0 +1,29 @@
+{
+  "dependencies": {
+    "flatted": "^3.3.3",
+    "mysql2": "^3.23.2",
+    "sharp": "^0.35.3",
+    "ws": "^8.21.3"
+  },
+  "description": "FantasyFinal game server for AlemonX",
+  "devDependencies": {
+    "@alemonjs/server": "file:packages/server-platform",
+    "@types/node": "^22",
+    "@types/ws": "^8.18.1",
+    "alemonjs": "^2.1.95",
+    "lvyjs": "^0.3.0-alpha.2",
+    "tsx": "^4.23.9"
+  },
+  "name": "FantasyFinal-server",
+  "private": true,
+  "scripts": {
+    "app": "node index.js",
+    "build": "lvy build",
+    "delete": "pm2 delete pm2.config.cjs",
+    "dev": "node index.js",
+    "start": "pm2 startOrRestart pm2.config.cjs",
+    "stop": "pm2 stop pm2.config.cjs"
+  },
+  "type": "module",
+  "version": "1.0.0"
+}

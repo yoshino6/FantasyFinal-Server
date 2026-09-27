@@ -1,0 +1,40 @@
+mysql:
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  password: root
+  database: fantasy_ceshi
+redis:
+  host: 127.0.0.1
+  port: 6379
+  user: default
+  db: 0
+
+login: "server"
+port: 17117
+
+FantasyFinal:
+  runtime: core
+  appApiServer:
+    enabled: true
+    listenHost: "127.0.0.1"
+    port: 17117
+  adminWeb:
+    enabled: true
+    listenHost: "127.0.0.1"
+    port: 17118
+    sessionIdleMinutes: 30
+    sessionAbsoluteMinutes: 480
+    ownerBootstrapPasswordHash: "scrypt$f2daf5da15d499ab291dc0e7b1c5464f$6b31f4665dbabd9ebd6a9a9c70482e8a7c656475fa50a95eac7518144788424fd4300f93c0f12b3936f295aa8852cc801a7f305b08cbcb4e7a874359abc60a38"
+
+  coreApi:
+    enabled: true
+    listenHost: "127.0.0.1"
+    port: 17200
+    serviceToken: "ff-4406d25585444ea3a173cdf0442a9829cebf3c354117477b91e69a6b5e911c85"
+  automatonPortrait:
+    host:
+      provider: generic
+      uploadUrl: "https://img.czl.net/api/v1/upload"
+      # Replace with your API Token only; do not include the Bearer prefix.
+      token: "56|czlimg_0Ar1Na26MKPxqWQ2TVFjEKpG2ibdNWMvnIqX307vd6cff4ae"
