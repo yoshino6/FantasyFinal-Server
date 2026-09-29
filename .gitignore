@@ -5,3 +5,5 @@ logs/
 *.log
 alemon.config.yaml
 alemon.yaml
+*.tar.gz
+服务器配置-server*.txt

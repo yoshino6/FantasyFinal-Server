@@ -6,8 +6,9 @@ import { worldSurfaceMaterials, worldSurfaceMonsters, worldSurfaceRegions } from
 import { epicBlueprintDropChance, epicForgeRecipes, rareForgeMaterials, regionalForgeMaterials } from '../config/epic-forging';
 import { allBeastCoreMaterials, allMeatChunkMaterials, allPurifiedCraftMaterials, beastCoreCode, meatChunkCode, meatChunkQuantity, monsterCraftMaterialCode, monsterCraftMaterialKinds, monsterCraftMaterialName, monsterDropsMeat } from '../game/monster-crafting-material.service';
 import { alchemyOutputDefinitions, alchemyStatusDefinitions } from '../game/alchemy-catalog';
-import { advancedProfessionActiveSkillCodes, worldTreeAdvancedProfessions } from '../game/advanced-profession.config';
-import { spiritSummonerActiveSkillCodes, spiritSummonerPassiveDescription } from '../game/spirit-summoner.config';
+import { advancedProfessionActiveSkillCodes, mapHiddenAdvancedProfessions, worldTreeAdvancedProfessions } from '../game/advanced-profession.config';
+import { legacySpiritSummonerSkillCodes } from '../game/spirit-summoner.config';
+import { newAdvancedSkillDefinitions } from '../game/map-hidden-advanced-skills.config';
 import { blindBoxBlueprints, constructionRecipes, constructionValueByCode, deviceCodes, workshopBlueprints } from '../game/deconstructor-catalog';
 import { regionalBossComponentDefinitions } from '../game/regional-boss-components.config';
 import { regionalV2Resistance, regionalV2Skills, regionalV2SkillProfiles } from '../game/regional-boss-v2.config';
@@ -97,12 +98,12 @@ const seedDynamicAlchemyContent = async (pool: Pool) => {
 
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS players (
-    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, qq_user_id VARCHAR(32) NOT NULL, qq_nickname VARCHAR(128) NULL,
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, qq_user_id VARCHAR(32) NOT NULL, app_login_id VARCHAR(32) NULL, qq_nickname VARCHAR(128) NULL,
     password_hash VARCHAR(256) NULL, password_updated_at DATETIME NULL,
     failed_login_count SMALLINT UNSIGNED NOT NULL DEFAULT 0, locked_until DATETIME NULL, last_login_at DATETIME NULL,
     status ENUM('registering','active','banned') NOT NULL DEFAULT 'registering',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (id), UNIQUE KEY uk_players_qq_user_id (qq_user_id)
+    PRIMARY KEY (id), UNIQUE KEY uk_players_qq_user_id (qq_user_id), UNIQUE KEY uk_players_app_login_id (app_login_id)
   ) ENGINE=InnoDB`,
   `CREATE TABLE IF NOT EXISTS game_permissions (
     qq_user_id VARCHAR(32) NOT NULL, role ENUM('owner','admin') NOT NULL, granted_by VARCHAR(32) NOT NULL,
@@ -351,8 +352,8 @@ const schemaStatements = [
   ) ENGINE=InnoDB`
   , `CREATE TABLE IF NOT EXISTS player_mails (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, character_id BIGINT UNSIGNED NOT NULL, title VARCHAR(96) NOT NULL, content TEXT NOT NULL,
-    received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, claimed_at DATETIME NULL, deleted_at DATETIME NULL,
-    PRIMARY KEY (id), KEY idx_mail_character_received (character_id,deleted_at,received_at),
+    received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, read_at DATETIME NULL, claimed_at DATETIME NULL, deleted_at DATETIME NULL,
+    PRIMARY KEY (id), KEY idx_mail_character_received (character_id,deleted_at,received_at), KEY idx_mail_character_unread (character_id,deleted_at,read_at),
     CONSTRAINT fk_mail_character FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
   ) ENGINE=InnoDB`
   , `CREATE TABLE IF NOT EXISTS player_mail_attachments (
@@ -1614,6 +1615,8 @@ export const initializeSchema = async (pool: Pool) => {
     try { await pool.query(`ALTER TABLE characters ADD COLUMN ${column}`); } catch (error: any) { if (error?.code !== 'ER_DUP_FIELDNAME') throw error; }
   }
   try { await pool.query("ALTER TABLE admin_mail_edits ADD COLUMN title VARCHAR(96) NOT NULL DEFAULT '' AFTER recipient_scope"); } catch (error: any) { if (error?.code !== 'ER_DUP_FIELDNAME') throw error; }
+  try { await pool.query('ALTER TABLE player_mails ADD COLUMN read_at DATETIME NULL AFTER received_at'); } catch (error: any) { if (error?.code !== 'ER_DUP_FIELDNAME') throw error; }
+  try { await pool.query('ALTER TABLE player_mails ADD KEY idx_mail_character_unread (character_id,deleted_at,read_at)'); } catch (error: any) { if (error?.code !== 'ER_DUP_KEYNAME') throw error; }
   try { await pool.query('ALTER TABLE bounty_notices ADD COLUMN source_spawn_id BIGINT UNSIGNED NULL'); } catch (error: any) { if (error?.code !== 'ER_DUP_FIELDNAME') throw error; }
   try { await pool.query('ALTER TABLE player_warrants ADD COLUMN pursuit_defeats TINYINT UNSIGNED NOT NULL DEFAULT 0'); } catch (error: any) { if (error?.code !== 'ER_DUP_FIELDNAME') throw error; }
   try { await pool.query("ALTER TABLE player_forge_sessions ADD COLUMN entry_source ENUM('blacksmith','profession') NOT NULL DEFAULT 'blacksmith'"); } catch (error: any) { if (error?.code !== 'ER_DUP_FIELDNAME') throw error; }
@@ -1755,6 +1758,13 @@ export const initializeSchema = async (pool: Pool) => {
       try { await pool.query(stmt); } catch (error: any) { if (error?.code !== 'ER_DUP_FIELDNAME' && error?.code !== 'ER_DUP_KEYNAME') throw error; }
     }
   }
+  // H5 的永久登录号不依赖角色 Game ID。DDL 与回填都可重复执行，启动中断后不会留下半完成迁移。
+  try { await pool.query('ALTER TABLE players ADD COLUMN app_login_id VARCHAR(32) NULL AFTER qq_user_id'); }
+  catch (error: any) { if (error?.code !== 'ER_DUP_FIELDNAME') throw error; }
+  try { await pool.query('CREATE UNIQUE INDEX uk_players_app_login_id ON players (app_login_id)'); }
+  catch (error: any) { if (error?.code !== 'ER_DUP_KEYNAME') throw error; }
+  // 旧玩家使用独立的 H-L 命名空间，避免与新注册随机 H- 登录号冲突。
+  await pool.query("UPDATE players SET app_login_id=CONCAT('H-L',LPAD(UPPER(HEX(id)),16,'0')) WHERE app_login_id IS NULL");
   // 会话改为按 player_id 建立后，app_user_id 不再必填；旧库该列仍是 NOT NULL，需放行 NULL。
   const [appSessionPlayerOnlyMigration] = await pool.query("INSERT IGNORE INTO game_data_migrations (code) VALUES ('app_session_player_only_v1')") as unknown as [{ affectedRows: number }];
   if (Number(appSessionPlayerOnlyMigration.affectedRows) > 0) {
@@ -3634,6 +3644,25 @@ export const initializeSchema = async (pool: Pool) => {
       profession.trial.code, profession.trial.name, constitution, spirit, strength, intelligence, agility, perception, JSON.stringify(profession.trial.skillCodes)
     ]);
   }
+  // 地图隐藏导师不进入 map_npcs；旧版世界树唤灵师导师仅从公开地图实体中移除。
+  await pool.query(`DELETE n FROM map_npcs n JOIN map_regions r ON r.id=n.region_id
+    WHERE r.code='world_tree' AND n.code='mentor_summoner_mia'`);
+  // 旧公开试炼的未战斗导师分身也不能继续留在世界树附近列表；保留历史 spawn 记录。
+  await pool.query(`UPDATE monster_spawns s
+    JOIN map_regions r ON r.id=s.region_id JOIN monster_templates t ON t.id=s.template_id
+    SET s.defeated_at=NOW()
+    WHERE r.code='world_tree' AND t.code='summoner_mia' AND s.defeated_at IS NULL
+      AND JSON_CONTAINS(COALESCE(s.traits_json,JSON_ARRAY()),JSON_OBJECT('code','advanced_profession_trial'))
+      AND NOT EXISTS (SELECT 1 FROM combat_targets ct JOIN combat_sessions cs ON cs.id=ct.session_id
+        WHERE ct.spawn_id=s.id AND cs.state='active')`);
+  for (const profession of mapHiddenAdvancedProfessions) {
+    const [constitution, spirit, strength, intelligence, agility, perception] = profession.trial.stats;
+    await pool.execute(`INSERT INTO monster_templates (code,name,monster_class,level,constitution,spirit,strength,intelligence,agility,perception,constitution_growth,spirit_growth,strength_growth,intelligence_growth,agility_growth,perception_growth,skill_sequence,experience,drops_json,weakness_json,resistance_json,element_mastery_json,element_resistance_json)
+      VALUES (?,?,'boss',30,?,?,?,?,?,?,1,1,1,1,1,1,?,0,JSON_ARRAY(),JSON_ARRAY(),JSON_ARRAY(),JSON_OBJECT(),JSON_OBJECT())
+      ON DUPLICATE KEY UPDATE name=VALUES(name),skill_sequence=VALUES(skill_sequence),constitution=VALUES(constitution),spirit=VALUES(spirit),strength=VALUES(strength),intelligence=VALUES(intelligence),agility=VALUES(agility),perception=VALUES(perception)`, [
+      profession.trial.code, profession.trial.name, constitution, spirit, strength, intelligence, agility, perception, JSON.stringify(profession.trial.skillCodes)
+    ]);
+  }
   // 唤灵师二转：每一种灵占据独立灵位，回合结束时各自行动。保留灵位成长空间给后续转职。
   await pool.query(`INSERT INTO skill_definitions (code,name,category,tier,damage_type,skill_kind,element,range_type,target_scope,mana_cost,cooldown_turns,power,learn_cost,upgrade_cost,max_level,power_per_level,description) VALUES
     ('spirit_call_ember','灵契·炽羽雀','utility','中位','无','灵契','火','远程','自身',42,2,0,99,99,1,0,'召来炽羽雀，持续4回合。回合结束时对当前目标发动火焰追击。'),
@@ -3646,9 +3675,7 @@ export const initializeSchema = async (pool: Pool) => {
     ('mia_root_resonance','龟甲共振','magic','上位','魔法','导师灵契','木','远程','全体',44,4,96,99,1,1,0,'苔甲龟的回响沿地脉扩散，震荡靠近的敌人。'),
     ('sen_stonefall','引雷坠击','magic','上位','魔法','导师元素','雷','远程','单体',38,3,118,99,1,1,0,'澜烬引落积蓄的雷光轰击目标。')
     ON DUPLICATE KEY UPDATE name=VALUES(name),category=VALUES(category),tier=VALUES(tier),damage_type=VALUES(damage_type),skill_kind=VALUES(skill_kind),element=VALUES(element),range_type=VALUES(range_type),target_scope=VALUES(target_scope),mana_cost=VALUES(mana_cost),cooldown_turns=VALUES(cooldown_turns),power=VALUES(power),learn_cost=VALUES(learn_cost),upgrade_cost=VALUES(upgrade_cost),max_level=VALUES(max_level),power_per_level=VALUES(power_per_level),description=VALUES(description)`);
-  await pool.execute(`UPDATE skill_definitions SET description=?,passive_effect_json=? WHERE code='passive_spirit_breath'`, [spiritSummonerPassiveDescription, JSON.stringify({ mpRegenPct: 2, spiritLimitBonus: 2, spiritLimit: 3 })]);
-  await pool.execute(`UPDATE map_npcs SET name=?,description=? WHERE code='mentor_summoner_mia'`, ['灵契引路人·米娅', '世界树常驻的唤灵师导师。她教导灵契、灵位与多灵协作。']);
-  // 世界树二转的四个方案主动技均是正式玩家技能；灵契师在此基础上另有五个召唤灵契。
+  // 旧灵契技能定义仅保留供旧角色数据兼容，不再作为新唤灵师的可装备技能。
   await pool.query(`INSERT INTO skill_definitions (code,name,category,tier,damage_type,skill_kind,element,range_type,target_scope,mana_cost,cooldown_turns,power,learn_cost,upgrade_cost,max_level,power_per_level,description) VALUES
     ('bulwark_shieldwall_advance','盾墙推进','physical','中位','打击','打击','无','近战','单体',110,2,115,99,99,1,0,'以盾墙压向目标，造成115%物理伤害，并使自身获得12%伤害减免2回合。'),
     ('bulwark_vicarious_guard','代偿守护','utility','中位','无','防护','无','自身','自身',190,3,0,99,99,1,0,'为生命比例最低的队友施加2回合守护：其首次受到的单体伤害有35%转移给你；自身同时获得2回合20%伤害减免，按转移前伤害获得守势，单次最多30。'),
@@ -3731,6 +3758,17 @@ export const initializeSchema = async (pool: Pool) => {
     ('advanced_undying','濒危不倒','stat_modifier',1,2,1,1,0,'本次濒危时保留1点生命，随后消失。'),
     ('life_shield','生命护盾','stat_modifier',0,1,1,1,0,'护盾拥有独立生命值，会先于生命承受伤害；每次获得的护盾独立计时，到期后仅移除该层；同一目标的护盾总量不能超过其最大生命。技能效果中的数值按目标最大生命百分比换算。')
     ON DUPLICATE KEY UPDATE name=VALUES(name),effect_type=VALUES(effect_type),default_value=VALUES(default_value),default_duration=VALUES(default_duration),max_level=VALUES(max_level),max_stacks=VALUES(max_stacks),stackable=VALUES(stackable),description=VALUES(description)`);
+  for (const skill of newAdvancedSkillDefinitions) {
+    await pool.execute(`INSERT INTO skill_definitions
+      (code,name,category,tier,damage_type,skill_kind,element,range_type,target_scope,mana_cost,base_mana_cost,cooldown_turns,power,learn_cost,upgrade_cost,max_level,power_per_level,description)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,99,99,1,0,?)
+      ON DUPLICATE KEY UPDATE name=VALUES(name),category=VALUES(category),tier=VALUES(tier),damage_type=VALUES(damage_type),skill_kind=VALUES(skill_kind),element=VALUES(element),range_type=VALUES(range_type),target_scope=VALUES(target_scope),mana_cost=VALUES(mana_cost),base_mana_cost=VALUES(base_mana_cost),cooldown_turns=VALUES(cooldown_turns),power=VALUES(power),learn_cost=VALUES(learn_cost),upgrade_cost=VALUES(upgrade_cost),max_level=VALUES(max_level),power_per_level=VALUES(power_per_level),description=VALUES(description)`, [
+      skill.code, skill.name, skill.category, skill.tier, skill.damageType, skill.skillKind, skill.element,
+      skill.rangeType, skill.targetScope, skill.manaCost,
+      skill.category === 'physical' ? Math.ceil(skill.manaCost / 0.4) : skill.manaCost,
+      skill.cooldownTurns, skill.power, skill.description
+    ]);
+  }
   const advancedSkillCodes = Object.values(advancedProfessionActiveSkillCodes).flat();
   await pool.query(`DELETE se FROM skill_effects se JOIN skill_definitions s ON s.id=se.skill_id WHERE s.code IN (${advancedSkillCodes.map(() => '?').join(',')})`, advancedSkillCodes);
   await pool.query(`INSERT INTO skill_effects (skill_id,effect_id,effect_level,value_override,duration_override,target_scope,trigger_timing) VALUES
@@ -3782,15 +3820,26 @@ export const initializeSchema = async (pool: Pool) => {
   // 自动出招属于玩家的持久选择：启动初始化只能补齐当前二转技能，不能删除技能记录、
   // 清空快捷栏或将任一出招改写成普通攻击。二转替换与洗点会在各自的玩家事务中处理
   // 已永久失效的技能；战斗内的冷却、蓝量、武器与资源不足则只临时回退本次普攻。
-  for (const profession of worldTreeAdvancedProfessions) {
+  for (const profession of [...worldTreeAdvancedProfessions, ...mapHiddenAdvancedProfessions]) {
     await pool.execute(`INSERT IGNORE INTO player_skills (character_id,skill_id,level,passive_linked)
       SELECT ap.character_id,s.id,1,1 FROM player_advanced_professions ap JOIN skill_definitions s ON s.code=?
       WHERE ap.profession_code=?`, [profession.passive.code, profession.code]);
-    const skillCodes = [...(advancedProfessionActiveSkillCodes[profession.code] ?? []), ...(profession.code === 'spirit_summoner' ? spiritSummonerActiveSkillCodes : [])];
+    const skillCodes = advancedProfessionActiveSkillCodes[profession.code] ?? [];
     if (!skillCodes.length) continue;
     await pool.execute(`INSERT IGNORE INTO player_skills (character_id,skill_id,level,passive_linked)
       SELECT ap.character_id,s.id,1,0 FROM player_advanced_professions ap JOIN skill_definitions s ON s.code IN (${skillCodes.map(() => '?').join(',')})
       WHERE ap.profession_code=?`, [...skillCodes, profession.code]);
+  }
+  // 旧唤灵师技能仍保留在已学记录中供审计，不再占据快捷栏或自动战斗；当前职业补齐新四技。
+  for (const oldCode of legacySpiritSummonerSkillCodes) {
+    await pool.execute(`UPDATE player_skills ps JOIN skill_definitions s ON s.id=ps.skill_id
+      JOIN player_advanced_professions ap ON ap.character_id=ps.character_id
+      SET ps.quick_slot=NULL WHERE ap.profession_code='spirit_summoner' AND s.code=? AND ps.quick_slot IS NOT NULL`, [oldCode]);
+    for (const table of ['player_auto_battle_actions', 'player_pvp_auto_battle_actions']) {
+      await pool.execute(`UPDATE ${table} a JOIN skill_definitions s ON s.id=a.skill_id
+        JOIN player_advanced_professions ap ON ap.character_id=a.character_id
+        SET a.skill_id=NULL WHERE ap.profession_code='spirit_summoner' AND s.code=?`, [oldCode]);
+    }
   }
   // 传承旁修消耗品：每位已完成常驻二转的角色补发一枚，之后可由后续首领与活动扩充来源。
   await pool.query(`INSERT INTO item_definitions (code,name,description,obtain_source,item_type,item_category,rarity,required_level,weight,trade_price,stack_limit,stackable,is_tradeable,effect_json)
@@ -3837,6 +3886,16 @@ export const initializeSchema = async (pool: Pool) => {
   await initializeCombatSkillBalance(pool);
   await (await import('./hidden-professions')).initializeHiddenProfessions(pool);
   await (await import('./advanced-bound-skills')).initializeAdvancedBoundSkills(pool);
+  // 旧唤灵师本职被动本轮改为隐藏二转数值；只在战斗都结束后重算现有角色缓存面板。
+  const [mapHiddenSummonerPanelMigration] = await pool.query("SELECT 1 FROM game_data_migrations WHERE code='map_hidden_summoner_panel_recalculation_v1' LIMIT 1") as unknown as [[{ 1: number }]];
+  if (!mapHiddenSummonerPanelMigration.length) {
+    const [activeBattles] = await pool.query("SELECT 1 FROM combat_sessions WHERE state='active' UNION ALL SELECT 1 FROM player_pvp_battle_sessions WHERE state='active' LIMIT 1") as unknown as [[{ 1: number }]];
+    if (!activeBattles.length) {
+      const [summoners] = await pool.query("SELECT character_id AS id FROM player_advanced_professions WHERE profession_code='spirit_summoner'") as unknown as [[{ id: number }]];
+      for (const character of summoners) await recalculateCharacterStats(pool, Number(character.id));
+      await pool.execute("INSERT IGNORE INTO game_data_migrations (code) VALUES ('map_hidden_summoner_panel_recalculation_v1')");
+    }
+  }
   await (await import('./negotiation')).initializeNegotiation(pool);
   await (await import('./opening')).initializeOpening(pool);
   await (await import('./companions')).initializeCompanions(pool);
@@ -3853,4 +3912,5 @@ export const initializeSchema = async (pool: Pool) => {
   await (await import('./map-descriptions')).initializeMapDescriptions(pool);
   await (await import('./travel-routes')).initializeTravelRoutes(pool);
   await (await import('./equipment-workshop')).initializeEquipmentWorkshop(pool);
+  await (await import('./map-hidden-advanced-professions')).initializeMapHiddenAdvancedProfessions(pool);
 };

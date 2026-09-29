@@ -1,4 +1,14 @@
 import type koaRouter from 'koa-router';
+import { registerHandbookRoutes } from './handbook-routes';
+import { registerBankApiRoutes } from './bank-routes';
+import { registerHomeApiRoutes } from './home-routes';
+import { registerGuildShopApiRoutes } from './guild-shop-routes';
+import { registerBookshopApiRoutes } from './bookshop-routes';
+import { registerHomeShopApiRoutes } from './home-shop-routes';
+import { registerEvolutionApiRoutes } from './evolution-routes';
+import { registerAdvancedProfessionApiRoutes } from './advanced-profession-routes';
+import { registerMarketApiRoutes } from './market-routes';
+import { registerSkillApiRoutes } from './skill-routes';
 import { randomUUID } from 'node:crypto';
 import { getAppApiConfig } from '../config/app-api';
 import {
@@ -15,16 +25,33 @@ import { executeAppCommand, appQuickPanel } from './app-command.service';
 import { appCommandCategories, appCommandCatalogFor, findAppCommandById, isAppCommandAllowed, type AppCommandArgument } from './command-catalog';
 import { getCharacter } from '../game/character.service';
 import { executeCoreGameCommand, listCoreCommandCatalog } from '../core-command-bridge';
-import { formatValueToAppMessage } from './app-format';
+import {
+  CoreInteractionActionError,
+  executeIssuedCoreInteractionAction,
+  issueCoreInteractionActions
+} from './interaction-action.service';
+import {
+  countUnreadWebNotifications,
+  listWebNotifications,
+  listWebNotificationsAfter,
+  markAllWebNotificationsRead,
+  markWebNotificationsRead
+} from './notification.service';
+import { countUnreadGameMails, gameMailDetail, listGameMails } from './mail.service';
+import { claimAllMails, claimMail, deleteMail } from '../game/mail.service';
 import {
   acceptPartyApplication,
   applyPartyRecruitment,
+  createWebParty,
   createPartyRecruitment,
+  currentWebParty,
+  leaveWebParty,
   listChatChannels,
   listChatMessages,
   listPartyApplications,
-  listPartyRecruitments,
+  renameWebParty,
   rejectPartyApplication,
+  searchPartyRecruitments,
   sendChatMessage,
   issueRealtimeTicket
 } from './social.service';
@@ -183,7 +210,17 @@ const actionCommand = (entry: ActionCatalogEntry, values: string[]): string => {
   return [entry.command, ...args].join(' ').trim();
 };
 
-const actionMessage = (formats: unknown[][]) => formats.map(format => formatValueToAppMessage(format));
+const signedCoreResponse = async (
+  session: AppSession,
+  sessionToken: string,
+  originCommand: string,
+  execution: Awaited<ReturnType<typeof executeCoreGameCommand>>,
+  blockWebProtectedWrites = false
+) => {
+  const issued = await issueCoreInteractionActions({ session, sessionToken, originCommand, execution, blockWebProtectedWrites });
+  const first = issued.messages[0] ?? { text: '命令已执行。', buttons: [] };
+  return { ...first, ...issued };
+};
 
 /**
  * 兼容旧版网页按钮发送的纯文本命令。命令必须先出现在动态公开目录中，
@@ -196,10 +233,42 @@ const coreEntryForRawCommand = (raw: string) => {
     .sort((left, right) => right.command.length - left.command.length)
     .find(entry => command === entry.command || command.startsWith(`${entry.command} `));
 };
+const webMarketWriteCommand = (command: string) => /^\/*万叶(?:卖出|求购|撤单)(?:\s|$)/.test(command.trim());
+const webSkillWriteCommand = (command: string) => /^\/*(?:学习技能|升级技能|升级专精|链接被动|技能快捷|升级鉴识)(?:\s|$)/.test(command.trim());
+const webBankWriteCommand = (command: string) => /^\/*钱庄(?:存入|取出|定存|兑付|提前支取)(?:\s|$)/.test(command.trim());
+const webHomeWriteCommand = (command: string) => /^\/*家园(?:改名|购买|回家|出门|放入|取出|升级|扩建|制作|拆除)(?:\s|$)/.test(command.trim());
+const webGuildShopWriteCommand = (command: string) => /^\/*(?:购买商品|出售商品)(?:\s|$)/.test(command.trim());
+const webBookshopWriteCommand = (command: string) => /^\/*(?:购买书屋物品|出售书屋物品)(?:\s|$)/.test(command.trim());
+const webHomeShopWriteCommand = (command: string) => /^\/*百纳居交易(?:\s|$)/.test(command.trim());
+const webEvolutionWriteCommand = (command: string) => /^\/*(?:进化注射|进化共生选择|进化定型选择|领取进化委托|提交进化委托|进化变异操作)(?:\s|$)/.test(command.trim());
+const webAdvancedProfessionWriteCommand = (command: string) => /^\/*(?:二转闲聊|接受二转|确认切换二转|推进二转|提交二转凭证|开启导师试炼|开始二转旁修|完成二转旁修|切换二转旁修|隐藏二转|隐藏导师操作|二转配置)(?:\s|$)/.test(command.trim());
+const webProtectedWriteCommand = (command: string) => webMarketWriteCommand(command) || webSkillWriteCommand(command) || webBankWriteCommand(command) || webHomeWriteCommand(command) || webGuildShopWriteCommand(command) || webBookshopWriteCommand(command) || webHomeShopWriteCommand(command) || webEvolutionWriteCommand(command) || webAdvancedProfessionWriteCommand(command);
+const webProtectedWriteMessage = (command: string) => webSkillWriteCommand(command)
+  ? '请在角色页的技能面板查看消耗并确认操作。'
+  : webBankWriteCommand(command) ? '请在探索地图的银铃钱庄查看报价并确认办理。'
+  : /^\/*家园(?:放入|取出)(?:\s|$)/.test(command.trim()) ? '请在世界页的家园储物查看报价并确认操作。'
+  : webHomeWriteCommand(command) ? '家园操作请先查看世界页的家园状态。'
+  : webGuildShopWriteCommand(command) ? '请在探索地图的公会商店查看报价并确认交易。'
+  : webBookshopWriteCommand(command) ? '请在探索地图的百味书屋查看报价并确认交易。'
+  : webHomeShopWriteCommand(command) ? '请在探索地图的百纳居查看报价并确认交易。'
+  : webEvolutionWriteCommand(command) ? '请在角色页的进化档案查看当前条件，并通过专用确认流程操作。'
+  : webAdvancedProfessionWriteCommand(command) ? '请在角色页的职业进阶查看当前试炼，并通过专用确认流程操作。'
+  : '请在世界页的万叶联市查看报价并确认交易。';
 
 /** 桌宠 App API；默认保留旧前缀，新客户端使用 /api/desktop/v1。 */
 export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1') => {
   const apiPath = (path: string) => `${apiPrefix}${path}`;
+  if (apiPrefix === '/api/web/v1') {
+    registerBankApiRoutes(router, apiPrefix, { requireSession, parseBody, apiError });
+    registerHomeApiRoutes(router, apiPrefix, { requireSession, parseBody, apiError });
+    registerGuildShopApiRoutes(router, apiPrefix, { requireSession, parseBody, apiError });
+    registerBookshopApiRoutes(router, apiPrefix, { requireSession, parseBody, apiError });
+    registerHomeShopApiRoutes(router, apiPrefix, { requireSession, parseBody, apiError });
+    registerEvolutionApiRoutes(router, apiPrefix, { requireSession, parseBody, apiError });
+    registerAdvancedProfessionApiRoutes(router, apiPrefix, { requireSession, parseBody, apiError });
+    registerMarketApiRoutes(router, apiPrefix, { requireSession, parseBody, apiError });
+    registerSkillApiRoutes(router, apiPrefix, { requireSession, parseBody, apiError });
+  }
 
   router.get(apiPath('/health'), async (ctx: Context) => {
     ctx.type = 'application/json';
@@ -218,14 +287,19 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
         apiError(ctx, 400, '请填写昵称。');
         return;
       }
-      const created = await createAppUser(displayName);
+      if (String(body.password ?? '') !== String(body.passwordConfirmation ?? '')) {
+        apiError(ctx, 400, '两次密码不一致。');
+        return;
+      }
+      const created = await createAppUser(displayName, body.password);
       ctx.type = 'application/json';
       ctx.body = {
         ok: true,
         accessToken: created.token,
-        uid: created.gameUserId,
+        uid: created.loginId,
+        loginId: created.loginId,
         gameUserId: created.gameUserId,
-        account: { uid: created.gameUserId, passwordLoginEnabled: false }
+        account: { uid: created.loginId, loginId: created.loginId, gameUserId: created.gameUserId, passwordLoginEnabled: true }
       };
     } catch (error) {
       apiError(ctx, 400, error instanceof Error ? error.message : '注册失败。');
@@ -239,11 +313,25 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
         return;
       }
       const body = await parseBody(ctx);
-      const result = await loginAppUser(body.gameId ?? body.uid, body.password);
+      const result = await loginAppUser(body.loginId ?? body.gameId ?? body.uid, body.password);
       ctx.type = 'application/json';
-      ctx.body = { ok: true, accessToken: result.token, uid: result.gameUserId, gameUserId: result.gameUserId, account: { uid: result.gameUserId, passwordLoginEnabled: true } };
+      ctx.body = {
+        ok: true,
+        accessToken: result.token,
+        uid: result.gameUserId || result.loginId,
+        loginId: result.loginId,
+        gameUserId: result.gameUserId,
+        account: { uid: result.gameUserId || result.loginId, loginId: result.loginId, gameUserId: result.gameUserId, passwordLoginEnabled: true }
+      };
     } catch (error) {
-      apiError(ctx, 401, 'UID 或密码错误。');
+      const message = error instanceof Error ? error.message : '';
+      if (message === '登录号或密码错误。') apiError(ctx, 401, message);
+      else if (message === '请求格式无效。' || message === '请求体过大。') apiError(ctx, 400, message);
+      else {
+        // 数据库或迁移异常不应伪装成密码错误。
+        console.error('[app-api/login] unexpected failure:', error);
+        apiError(ctx, 503, '登录服务暂时不可用，请稍后重试。');
+      }
     }
   });
 
@@ -258,7 +346,7 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
       }
       const result = await setAppPasswordByPlayerId(session.playerId, body.newPassword);
       ctx.type = 'application/json';
-      ctx.body = { ok: true, accessToken: result.token, uid: session.gameUserId, gameUserId: session.gameUserId, passwordLoginEnabled: true, passwordUpdatedAt: new Date().toISOString() };
+      ctx.body = { ok: true, accessToken: result.token, uid: session.gameUserId || session.loginId, loginId: session.loginId, gameUserId: session.gameUserId, passwordLoginEnabled: true, passwordUpdatedAt: new Date().toISOString() };
     } catch (error) {
       apiError(ctx, 400, error instanceof Error ? error.message : '设置密码失败。');
     }
@@ -275,7 +363,7 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
       }
       const result = await changeAppPasswordByPlayerId(session.playerId, body.currentPassword, body.newPassword);
       ctx.type = 'application/json';
-      ctx.body = { ok: true, accessToken: result.token, uid: session.gameUserId, gameUserId: session.gameUserId, passwordLoginEnabled: true, passwordUpdatedAt: new Date().toISOString() };
+      ctx.body = { ok: true, accessToken: result.token, uid: session.gameUserId || session.loginId, loginId: session.loginId, gameUserId: session.gameUserId, passwordLoginEnabled: true, passwordUpdatedAt: new Date().toISOString() };
     } catch (error) {
       apiError(ctx, 400, error instanceof Error ? error.message : '修改密码失败。');
     }
@@ -307,10 +395,11 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
     try {
       const qqUserId = await appSessionQqUser(session);
       const character = await getCharacter(qqUserId);
-      const appCommands = appCommandCatalogFor(Boolean(character));
+      const appCommands = appCommandCatalogFor(Boolean(character))
+        .filter(command => apiPrefix !== '/api/web/v1' || !webSkillWriteCommand(command.command));
       const appCommandNames = new Set(appCommands.flatMap(command => [command.command, ...(command.aliases ?? [])]));
       const coreCommands = listCoreCommandCatalog()
-        .filter(command => !appCommandNames.has(command.command))
+        .filter(command => !appCommandNames.has(command.command) && !(apiPrefix === '/api/web/v1' && webProtectedWriteCommand(command.command)))
         .map(command => ({
           ...command,
           enabled: !command.requiresCharacter || Boolean(character),
@@ -344,6 +433,11 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
       const commandId = String(body.commandId ?? '').trim();
       const appEntry = findAppCommandById(commandId);
       const coreEntry = listCoreCommandCatalog().find(entry => entry.id === commandId);
+      const protectedEntry = appEntry ?? coreEntry;
+      if (apiPrefix === '/api/web/v1' && protectedEntry && webProtectedWriteCommand(protectedEntry.command)) {
+        apiError(ctx, 400, webProtectedWriteMessage(protectedEntry.command));
+        return;
+      }
       const entry = (appEntry ?? coreEntry) as ActionCatalogEntry | undefined;
       if (!entry) {
         apiError(ctx, 400, '网页端不支持此命令。');
@@ -395,7 +489,9 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
         }
         pendingCommandActions.delete(confirmToken);
       }
-      if (coreEntry) {
+      const coreExecutionEntry = coreEntry ?? (commandId === 'story.register'
+        ? listCoreCommandCatalog().find(item => item.command === '注册') : undefined);
+      if (coreExecutionEntry) {
         const execution = await executeCoreGameCommand({
           requestId: `web-action:${randomUUID()}`,
           actor: { provider: 'app', subject: qqUserId, displayName: session.displayName },
@@ -407,10 +503,9 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
           apiError(ctx, 400, '本体命令当前不可用。');
           return;
         }
-        const messages = actionMessage(execution.formats);
-        const first = messages[0] ?? { text: '命令已执行。', buttons: [] };
+        const signed = await signedCoreResponse(session, bearer(ctx), command, execution, apiPrefix === '/api/web/v1');
         ctx.type = 'application/json';
-        ctx.body = { ok: true, commandId, command, ...first, messages, refresh: entry.refresh ?? [], serverTime: new Date().toISOString() };
+        ctx.body = { ok: true, commandId, ...signed, refresh: entry.refresh ?? [] };
         return;
       }
       const result = await executeAppCommand({ qqUserId, command });
@@ -435,11 +530,20 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
         apiError(ctx, 400, '命令内容无效。');
         return;
       }
+      if (apiPrefix === '/api/web/v1' && webProtectedWriteCommand(command)) {
+        apiError(ctx, 400, webProtectedWriteMessage(command));
+        return;
+      }
       const qqUserId = await appSessionQqUser(session);
-      if (!isAppCommandAllowed(command)) {
+      // 注册开场由 Core 签发后续动作，避免旧 App 注册结果把隐藏剧情命令交给 H5。
+      if (!isAppCommandAllowed(command) || command.replace(/^\/+/, '') === '注册') {
         const coreEntry = coreEntryForRawCommand(command);
         if (!coreEntry) {
           apiError(ctx, 400, '网页端暂不支持此命令。');
+          return;
+        }
+        if (apiPrefix === '/api/web/v1' && webProtectedWriteCommand(coreEntry.command)) {
+          apiError(ctx, 400, webProtectedWriteMessage(coreEntry.command));
           return;
         }
         if (coreEntry.requiresCharacter && !await getCharacter(qqUserId)) {
@@ -457,10 +561,9 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
           apiError(ctx, 400, '本体命令当前不可用。');
           return;
         }
-        const messages = actionMessage(execution.formats);
-        const first = messages[0] ?? { text: '命令已执行。', buttons: [] };
+        const signed = await signedCoreResponse(session, bearer(ctx), command, execution, apiPrefix === '/api/web/v1');
         ctx.type = 'application/json';
-        ctx.body = { ok: true, command, ...first, messages, refresh: coreEntry.refresh ?? [], serverTime: new Date().toISOString() };
+        ctx.body = { ok: true, ...signed, refresh: coreEntry.refresh ?? [] };
         return;
       }
       const result = await executeAppCommand({ qqUserId, command });
@@ -468,6 +571,39 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
       ctx.body = { ok: true, ...result, serverTime: new Date().toISOString() };
     } catch (error) {
       apiError(ctx, 400, error instanceof Error ? error.message : '命令执行失败。');
+    }
+  });
+
+  /** 只接受当前 Core 结果签发的 actionId；网页不能提交隐藏命令文本。 */
+  router.post(apiPath('/interactions/actions'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const body = await parseBody(ctx);
+      const issued = await executeIssuedCoreInteractionAction({
+        session,
+        sessionToken: bearer(ctx),
+        actionId: String(body.actionId ?? ''),
+        revision: String(body.revision ?? ''),
+        idempotencyKey: String(body.idempotencyKey ?? ''),
+        blockWebProtectedWrites: apiPrefix === '/api/web/v1'
+      });
+      const first = issued.messages[0] ?? { text: '操作已完成。', buttons: [] };
+      ctx.type = 'application/json';
+      ctx.body = {
+        ok: true,
+        ...first,
+        ...issued,
+        refresh: ['summary', 'nearby', 'story', 'battle', 'inventory', 'equipment', 'skills']
+      };
+    } catch (error) {
+      if (error instanceof CoreInteractionActionError) {
+        ctx.status = error.status;
+        ctx.type = 'application/json';
+        ctx.body = { ok: false, code: error.code, message: error.message };
+      } else {
+        apiError(ctx, 400, error instanceof Error ? error.message : '互动执行失败。');
+      }
     }
   });
 
@@ -502,8 +638,9 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
       const qqUserId = await appSessionQqUser(session);
       const page = Math.max(1, Number(ctx.query?.page ?? 1) || 1);
       const keyword = String(ctx.query?.keyword ?? '').trim();
+      const mode = ctx.query?.mode === 'pvp' ? 'pvp' : 'pve';
       ctx.type = 'application/json';
-      ctx.body = { ok: true, ...(await autoBattleSkills(qqUserId, page, keyword)) };
+      ctx.body = { ok: true, ...(await autoBattleSkills(qqUserId, page, keyword, mode)) };
     } catch (error) {
       apiError(ctx, 400, error instanceof Error ? error.message : '读取自动战斗技能失败。');
     }
@@ -691,6 +828,73 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
     }
   });
 
+  /** 战斗目标与动作同次提交，快捷道具参数始终是栏位而不是物品 ID。 */
+  router.post(apiPath('/battle/actions'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const body = await parseBody(ctx);
+      const sessionId = String(body.sessionId ?? '').trim();
+      const turn = Number(body.turn);
+      const bonusPhase = body.bonusPhase;
+      const action = String(body.action ?? '').trim();
+      const actions = new Set(['attack', 'defend', 'escape', 'skill', 'item', 'device', 'anchor']);
+      const slot = body.slot === undefined ? undefined : Number(body.slot);
+      const skillId = body.skillId === undefined ? undefined : Number(body.skillId);
+      const deviceSkillCode = body.deviceSkillCode === undefined ? undefined : String(body.deviceSkillCode);
+      const targetInput = body.target;
+      const target = targetInput && typeof targetInput === 'object' && !Array.isArray(targetInput)
+        ? { kind: String((targetInput as Record<string, unknown>).kind), id: Number((targetInput as Record<string, unknown>).id) }
+        : undefined;
+      const valid = /^[0-9a-f-]{36}$/i.test(sessionId) && Number.isSafeInteger(turn) && turn > 0 && typeof bonusPhase === 'boolean' && actions.has(action)
+        && (slot === undefined || (Number.isSafeInteger(slot) && slot >= 1 && slot <= 4))
+        && (skillId === undefined || (Number.isSafeInteger(skillId) && skillId > 0))
+        && (deviceSkillCode === undefined || /^[a-z0-9_]+$/.test(deviceSkillCode))
+        && (targetInput === undefined || (target !== undefined && (target.kind === 'member' || target.kind === 'target') && Number.isSafeInteger(target.id) && target.id > 0))
+        && (action !== 'attack' || target?.kind === 'target')
+        && (action !== 'skill' || ((slot !== undefined) !== (skillId !== undefined)))
+        && (action !== 'item' || slot !== undefined)
+        && (action !== 'device' || slot !== undefined);
+      if (!valid) {
+        ctx.status = 400;
+        ctx.type = 'application/json';
+        ctx.body = { ok: false, code: 'BATTLE_ACTION_INVALID', message: '战斗动作参数无效，请刷新战斗状态后重试。' };
+        return;
+      }
+      const qqUserId = await appSessionQqUser(session);
+      const { submitWebBattleAction } = await import('../game/adventure.service');
+      const result = await submitWebBattleAction(qqUserId, {
+        sessionId, turn, bonusPhase: bonusPhase as boolean, action: action as 'attack' | 'defend' | 'escape' | 'skill' | 'item' | 'device' | 'anchor',
+        slot, skillId, deviceSkillCode,
+        target: target as { kind: 'member' | 'target'; id: number } | undefined
+      });
+      const text = String(('manualLog' in result ? result.manualLog : undefined) ?? result.log ?? (result.waiting ? '已提交行动，等待队友。' : '行动已完成。'));
+      // 战斗已提交后，面板读取失败也必须返回成功，避免客户端误将同一动作重发。
+      const panel = await appQuickPanel(session).catch(() => null);
+      ctx.type = 'application/json';
+      ctx.body = {
+        ok: true,
+        kind: 'battle_action',
+        text,
+        log: text,
+        ended: Boolean(result.ended),
+        waiting: Boolean(result.waiting),
+        ...(panel ? { panel } : {}),
+        refresh: ['summary', 'battle', 'inventory', 'skills'],
+        serverTime: new Date().toISOString()
+      };
+    } catch (error) {
+      const { BattleActionStaleError } = await import('../game/adventure.service');
+      ctx.status = error instanceof BattleActionStaleError ? 409 : 400;
+      ctx.type = 'application/json';
+      ctx.body = {
+        ok: false,
+        code: error instanceof BattleActionStaleError ? error.code : 'BATTLE_ACTION_FAILED',
+        message: error instanceof Error ? error.message : '战斗动作失败，请刷新战斗状态。'
+      };
+    }
+  });
+
   /** H5 遇战中的躲避操作，复用 QQ 端 encounterAction 的感知、速度与退回规则。 */
   router.post(apiPath('/encounter/avoid'), async (ctx: Context) => {
     const session = await requireSession(ctx);
@@ -780,6 +984,11 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
       const result = planned?.kind === 'travel_confirmation'
         ? await moveTo(qqUserId, x, y, z, { confirmationToken: String(planned.token) }) as any
         : planned;
+      if (result?.kind === 'travel_confirmation') {
+        apiError(ctx, 409, '路线在确认时发生变化，请重新点击前往。');
+        return;
+      }
+      const panel = await appQuickPanel(session).catch(() => null);
       ctx.type = 'application/json';
       ctx.body = {
         ok: true,
@@ -787,7 +996,7 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
         text: result?.kind === 'travel' ? `已开始前往${result.destinationName ?? result.regionName ?? '目标区域'}，预计 ${result.seconds} 秒。` : String(result?.text ?? '路线已安排。'),
         position: { x, y, z },
         remaining: Number(result?.remaining ?? result?.seconds ?? 0),
-        panel: await appQuickPanel(session),
+        panel,
         serverTime: new Date().toISOString()
       };
     } catch (error) {
@@ -795,11 +1004,216 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
     }
   });
 
+  /** H5 行程面板的停止操作，复用本体的事务与操作记录。 */
+  router.post(apiPath('/explore/travel/cancel'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const qqUserId = await appSessionQqUser(session);
+      const { cancelTravel } = await import('../game/adventure.service');
+      const cancelled = await cancelTravel(qqUserId);
+      const panel = await appQuickPanel(session).catch(() => null);
+      ctx.type = 'application/json';
+      ctx.body = {
+        ok: true,
+        kind: 'cancelled',
+        text: cancelled.activityType === 'hunt' ? '寻怪已取消。' : '移动已取消。',
+        panel,
+        serverTime: new Date().toISOString()
+      };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '停止行程失败。');
+    }
+  });
+
+  /** H5 没有 QQ 消息计时器；到期时由客户端触发服务层原有的幂等抵达结算。 */
+  router.post(apiPath('/explore/travel/settle'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const qqUserId = await appSessionQqUser(session);
+      const { completeTravel, travelStatus } = await import('../game/adventure.service');
+      const result = await completeTravel(qqUserId);
+      const pending = result ? null : await travelStatus(qqUserId);
+      const panel = await appQuickPanel(session).catch(() => null);
+      ctx.type = 'application/json';
+      ctx.body = {
+        ok: true,
+        kind: result?.kind ?? (pending ? 'pending' : 'idle'),
+        text: result ? String(result.text ?? '已抵达目的地。') : pending ? '行程仍在进行中。' : '当前没有待结算的行程。',
+        remaining: pending?.remaining ?? 0,
+        panel,
+        serverTime: new Date().toISOString()
+      };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '行程结算失败。');
+    }
+  });
+
   router.get(apiPath('/realtime-ticket'), async (ctx: Context) => {
     const session = await requireSession(ctx);
     if (!session) return;
     ctx.type = 'application/json';
-    ctx.body = { ok: true, ticket: issueRealtimeTicket(session), expiresIn: 60 };
+    ctx.body = { ok: true, ticket: issueRealtimeTicket(session, bearer(ctx)), expiresIn: 60 };
+  });
+
+  // 游戏邮件使用 player_mails；与下面的 Web 事件通知保持独立。
+  router.get(apiPath('/mail/unread'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, unreadCount: await countUnreadGameMails(session.playerId) };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '读取未读邮件失败。');
+    }
+  });
+
+  router.get(apiPath('/mail'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const beforeId = ctx.query?.beforeId;
+      const page = await listGameMails(session.playerId, {
+        limit: Number(ctx.query?.limit ?? 20),
+        ...(beforeId === undefined ? {} : { beforeId: Number(beforeId) }),
+        filter: String(ctx.query?.filter ?? 'all')
+      });
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, ...page };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '读取邮件失败。');
+    }
+  });
+
+  router.get(apiPath('/mail/:id'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const detail = await gameMailDetail(session.playerId, Number(ctx.params.id));
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, ...detail };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '读取邮件详情失败。');
+    }
+  });
+
+  router.post(apiPath('/mail/:id/claim'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const id = Number(ctx.params.id);
+      if (!Number.isSafeInteger(id) || id <= 0) throw new Error('邮件编号无效。');
+      const result = await claimMail(await appSessionQqUser(session), id);
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, ...result, unreadCount: await countUnreadGameMails(session.playerId) };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '领取邮件附件失败。');
+    }
+  });
+
+  router.post(apiPath('/mail/claim-all'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const result = await claimAllMails(await appSessionQqUser(session));
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, ...result, unreadCount: await countUnreadGameMails(session.playerId) };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '一键领取邮件附件失败。');
+    }
+  });
+
+  router.delete(apiPath('/mail/:id'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const id = Number(ctx.params.id);
+      if (!Number.isSafeInteger(id) || id <= 0) throw new Error('邮件编号无效。');
+      await deleteMail(await appSessionQqUser(session), id);
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, unreadCount: await countUnreadGameMails(session.playerId) };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '删除邮件失败。');
+    }
+  });
+
+  // 通知与邮件分别保存；这里只返回 Web 通知箱的持久化事件。
+  router.get(apiPath('/notifications/unread'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, unreadCount: await countUnreadWebNotifications(session.playerId) };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '读取未读通知失败。');
+    }
+  });
+
+  // 断线重连从最后一个 id 增量补拉，客户端按 id 去重。
+  router.get(apiPath('/notifications/changes'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const afterId = Number(ctx.query?.afterId ?? 0);
+      const limit = Math.max(1, Math.min(100, Math.floor(Number(ctx.query?.limit ?? 100) || 100)));
+      const items = await listWebNotificationsAfter(session.playerId, afterId, limit);
+      const nextAfterId = items[items.length - 1]?.id ?? afterId;
+      const hasMore = items.length === limit && (await listWebNotificationsAfter(session.playerId, nextAfterId, 1)).length > 0;
+      ctx.type = 'application/json';
+      ctx.body = {
+        ok: true,
+        items,
+        unreadCount: await countUnreadWebNotifications(session.playerId),
+        nextAfterId,
+        hasMore
+      };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '补拉通知失败。');
+    }
+  });
+
+  router.get(apiPath('/notifications'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const before = ctx.query?.beforeId ?? ctx.query?.cursor;
+      const page = await listWebNotifications(session.playerId, {
+        limit: Number(ctx.query?.limit ?? 20),
+        ...(before === undefined ? {} : { beforeId: Number(before) })
+      });
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, ...page };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '读取通知失败。');
+    }
+  });
+
+  router.post(apiPath('/notifications/read'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const body = await parseBody(ctx);
+      const updated = body.all === true
+        ? await markAllWebNotificationsRead(session.playerId)
+        : await markWebNotificationsRead(session.playerId, body.ids as number[]);
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, updated, unreadCount: await countUnreadWebNotifications(session.playerId) };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '标记通知已读失败。');
+    }
+  });
+
+  router.post(apiPath('/notifications/:id/read'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const updated = await markWebNotificationsRead(session.playerId, [Number(ctx.params.id)]);
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, updated, unreadCount: await countUnreadWebNotifications(session.playerId) };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '标记通知已读失败。');
+    }
   });
 
   // H5 社交接口：聊天正文走 REST，前端可按消息 id 增量拉取；队伍招募复用游戏内队伍规则。
@@ -873,12 +1287,71 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
     }
   });
 
-  router.get(apiPath('/party/recruitments'), async (ctx: Context) => {
+  router.get(apiPath('/party/current'), async (ctx: Context) => {
     const session = await requireSession(ctx);
     if (!session) return;
     try {
       ctx.type = 'application/json';
-      ctx.body = { ok: true, recruitments: await listPartyRecruitments(session) };
+      ctx.body = { ok: true, party: await currentWebParty(session) };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '读取当前队伍失败。');
+    }
+  });
+
+  router.post(apiPath('/party/create'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const body = await parseBody(ctx);
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, party: await createWebParty(session, body) };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '创建队伍失败。');
+    }
+  });
+
+  router.post(apiPath('/party/leave'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, party: await leaveWebParty(session) };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '退出队伍失败。');
+    }
+  });
+
+  router.post(apiPath('/party/rename'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const body = await parseBody(ctx);
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, party: await renameWebParty(session, body.name) };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '修改队伍名失败。');
+    }
+  });
+
+  router.get(apiPath('/party/search'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const page = await searchPartyRecruitments(session, ctx.query);
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, parties: page.recruitments, ...page };
+    } catch (error) {
+      apiError(ctx, 400, error instanceof Error ? error.message : '搜索队伍失败。');
+    }
+  });
+
+  router.get(apiPath('/party/recruitments'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const page = await searchPartyRecruitments(session, ctx.query);
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, ...page };
     } catch (error) {
       apiError(ctx, 400, error instanceof Error ? error.message : '读取队伍招募失败。');
     }
@@ -953,4 +1426,6 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
       apiError(ctx, 400, error instanceof Error ? error.message : '拒绝入队申请失败。');
     }
   });
+
+  if (apiPrefix === '/api/web/v1') registerHandbookRoutes(router, { apiPath, requireSession, parseBody, apiError });
 };

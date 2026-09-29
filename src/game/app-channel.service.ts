@@ -11,6 +11,7 @@ const LOGIN_LOCK_MINUTES = 15;
 const scrypt = promisify(scryptCallback);
 
 export type AppSession = {
+  loginId: string;
   gameUserId: string;
   displayName: string;
   passwordLoginEnabled: boolean;
@@ -58,6 +59,11 @@ const assertPassword = (password: unknown, field = '密码') => {
 };
 
 const bindingCode = () => String(randomBytes(4).readUInt32BE(0) % 1_000_000).padStart(6, '0');
+const newLoginId = () => `H-${randomBytes(14).toString('hex').toUpperCase()}`;
+const appAccountAvailable = (row: RowDataPacket | undefined) => Boolean(row && (
+  String(row.status) === 'active' ||
+  (String(row.status) === 'registering' && String(row.qq_user_id ?? '').startsWith('app_'))
+));
 
 const qqUserIdForPlayer = async (connection: Pool | PoolConnection, playerId: number): Promise<string> => {
   const [rows] = await connection.execute<RowDataPacket[]>(
@@ -67,22 +73,25 @@ const qqUserIdForPlayer = async (connection: Pool | PoolConnection, playerId: nu
   return String(rows[0]?.qq_user_id ?? '');
 };
 
-// 创建新玩家（注册）：直接操作 players 表，角色创建后才有真正 Game ID
-export const createAppUser = async (displayName: string): Promise<{ gameUserId: string; token: string; qqUserId: string }> => {
+// 注册即生成独立于角色的永久登录号；密码、玩家和会话在同一事务内落库。
+export const createAppUser = async (displayName: string, passwordValue: unknown): Promise<{ loginId: string; gameUserId: string; token: string; qqUserId: string }> => {
   const safeName = String(displayName ?? '').trim().slice(0, 32) || '旅人';
+  const password = assertPassword(passwordValue);
+  const hash = await passwordHash(password);
   const qqUserId = `app_${randomBytes(8).toString('hex')}`;
+  const loginId = newLoginId();
   const token = randomBytes(32).toString('base64url');
   return withTransaction(async connection => {
     const [result] = await connection.execute(
-      'INSERT INTO players (qq_user_id,qq_nickname) VALUES (?,?)',
-      [qqUserId, safeName]
+      "INSERT INTO players (qq_user_id,app_login_id,qq_nickname,password_hash,password_updated_at,status) VALUES (?,?,?,?,NOW(),'active')",
+      [qqUserId, loginId, safeName, hash]
     );
     const playerId = Number((result as any).insertId);
     await connection.execute(
       `INSERT INTO app_sessions (player_id,token_hash,expires_at) VALUES (?,?,DATE_ADD(NOW(),INTERVAL ? DAY))`,
       [playerId, tokenHash(token), SESSION_TTL_DAYS]
     );
-    return { gameUserId: '', token, qqUserId };
+    return { loginId, gameUserId: '', token, qqUserId };
   });
 };
 
@@ -95,38 +104,61 @@ const createSession = async (connection: Pool | PoolConnection, playerId: number
   return token;
 };
 
-// 用 Game ID（characters.game_id）+ 密码登录
-export const loginAppUser = async (gameUserIdValue: unknown, passwordValue: unknown): Promise<{ gameUserId: string; token: string; qqUserId: string }> => {
+// 旧版会话只记录 app_user_id；改密时也需撤销这些仍可访问同一玩家的会话。
+const revokePlayerSessions = async (connection: Pool | PoolConnection, playerId: number) => {
+  await connection.execute(
+    `DELETE s FROM app_sessions s
+     LEFT JOIN player_app_bindings b ON b.app_user_id=s.app_user_id
+     LEFT JOIN players own_player ON own_player.qq_user_id=s.app_user_id
+     WHERE s.player_id=? OR (s.player_id IS NULL AND COALESCE(b.player_id,own_player.id)=?)`,
+    [playerId, playerId]
+  );
+};
+
+// 永久 H 登录号在建角前即可使用；建角后也兼容数字 Game ID。
+export const loginAppUser = async (loginIdValue: unknown, passwordValue: unknown): Promise<{ loginId: string; gameUserId: string; token: string; qqUserId: string }> => {
   const password = String(passwordValue ?? '');
-  const gameId = parseGameId(gameUserIdValue);
-  if (!validPassword(password)) throw new Error('Game ID 或密码错误。');
-  return withTransaction(async connection => {
-    const playerId = await playerIdByGameId(connection, gameId);
-    if (!playerId) throw new Error('Game ID 或密码错误。');
+  const identifier = String(loginIdValue ?? '').trim().toUpperCase();
+  const appLoginId = /^H-[A-Z0-9]{3,30}$/.test(identifier) ? identifier : null;
+  const gameId = /^\d+$/.test(identifier) ? Number(identifier) : null;
+  const failureMessage = '登录号或密码错误。';
+  if (!validPassword(password) || (!appLoginId && (!Number.isSafeInteger(gameId) || Number(gameId) < GAME_ID_BASE))) throw new Error(failureMessage);
+  const result = await withTransaction(async connection => {
+    const playerId = appLoginId
+      ? Number((await connection.execute<RowDataPacket[]>('SELECT id FROM players WHERE app_login_id=? LIMIT 1', [appLoginId]))[0][0]?.id ?? 0)
+      : await playerIdByGameId(connection, Number(gameId));
+    if (!playerId) return { ok: false as const };
     const [rows] = await connection.execute<RowDataPacket[]>(
-      `SELECT id,password_hash,status,failed_login_count,locked_until,qq_user_id
+      `SELECT id,app_login_id,password_hash,status,failed_login_count,locked_until,qq_user_id
        FROM players WHERE id=? LIMIT 1 FOR UPDATE`,
       [playerId]
     );
     const row = rows[0];
     const lockedUntil = row?.locked_until ? new Date(row.locked_until).getTime() : 0;
-    if (!row || String(row.status) !== 'active' || (lockedUntil > Date.now())) throw new Error('Game ID 或密码错误。');
+    if (!appAccountAvailable(row) || (lockedUntil > Date.now())) return { ok: false as const };
     const matches = await passwordMatches(password, row.password_hash);
     if (!matches) {
+      const failures = lockedUntil && lockedUntil <= Date.now() ? 1 : Number(row.failed_login_count ?? 0) + 1;
       await connection.execute(
-        `UPDATE players SET failed_login_count=failed_login_count+1,
-         locked_until=CASE WHEN failed_login_count+1>=? THEN DATE_ADD(NOW(),INTERVAL ? MINUTE) ELSE locked_until END
+        `UPDATE players SET failed_login_count=?,
+         locked_until=CASE WHEN ? >= ? THEN DATE_ADD(NOW(),INTERVAL ? MINUTE) ELSE NULL END
          WHERE id=?`,
-        [LOGIN_FAILURE_LIMIT, LOGIN_LOCK_MINUTES, playerId]
+        [failures, failures, LOGIN_FAILURE_LIMIT, LOGIN_LOCK_MINUTES, playerId]
       );
-      throw new Error('Game ID 或密码错误。');
+      return { ok: false as const };
     }
     await connection.execute('UPDATE players SET failed_login_count=0,locked_until=NULL,last_login_at=NOW() WHERE id=?', [playerId]);
     const token = await createSession(connection, playerId);
-    const gameUserId = String(gameId);
+    const [characters] = await connection.execute<RowDataPacket[]>(
+      'SELECT game_id FROM characters WHERE player_id=? AND npc_code IS NULL LIMIT 1',
+      [playerId]
+    );
+    const gameUserId = characters[0]?.game_id ? String(characters[0].game_id) : '';
     const qqUserId = String(row.qq_user_id ?? '');
-    return { gameUserId, token, qqUserId };
+    return { ok: true as const, loginId: String(row.app_login_id ?? ''), gameUserId, token, qqUserId };
   });
+  if (!result.ok) throw new Error(failureMessage);
+  return result;
 };
 
 // 设置密码：QQ 玩家随时可设置（通过 qq_user_id 定位），桌宠端通过 session 定位
@@ -145,7 +177,7 @@ export const setAppPassword = async (gameUserIdValue: string, passwordValue: unk
     if (row.password_hash) throw new Error('账号已设置密码，请使用修改密码。');
     const hash = await passwordHash(password);
     await connection.execute('UPDATE players SET password_hash=?,password_updated_at=NOW(),failed_login_count=0,locked_until=NULL WHERE id=?', [hash, playerId]);
-    await connection.execute('DELETE FROM app_sessions WHERE player_id=?', [playerId]);
+    await revokePlayerSessions(connection, playerId);
     const token = await createSession(connection, playerId);
     return { token };
   });
@@ -168,7 +200,7 @@ export const changeAppPassword = async (gameUserIdValue: string, currentPassword
     if (!row || String(row.status) !== 'active' || !await passwordMatches(currentPassword, row.password_hash)) throw new Error('当前密码错误。');
     const hash = await passwordHash(password);
     await connection.execute('UPDATE players SET password_hash=?,password_updated_at=NOW(),failed_login_count=0,locked_until=NULL WHERE id=?', [hash, playerId]);
-    await connection.execute('DELETE FROM app_sessions WHERE player_id=?', [playerId]);
+    await revokePlayerSessions(connection, playerId);
     const token = await createSession(connection, playerId);
     return { token };
   });
@@ -192,6 +224,7 @@ export const setAppPasswordByQqUser = async (qqUserId: string, passwordValue: un
     if (!characters[0]?.game_id) throw new Error('尚未完成角色创建，无法设置跨平台密码。');
     const hash = await passwordHash(password);
     await connection.execute('UPDATE players SET password_hash=?,password_updated_at=NOW(),failed_login_count=0,locked_until=NULL WHERE id=?', [hash, Number(player.id)]);
+    await revokePlayerSessions(connection, Number(player.id));
     return { gameUserId: String(characters[0].game_id) };
   });
 };
@@ -201,15 +234,15 @@ export const setAppPasswordByPlayerId = async (playerId: number, passwordValue: 
   const password = assertPassword(passwordValue, '新密码');
   return withTransaction(async connection => {
     const [rows] = await connection.execute<RowDataPacket[]>(
-      'SELECT password_hash,status FROM players WHERE id=? LIMIT 1 FOR UPDATE',
+      'SELECT qq_user_id,password_hash,status FROM players WHERE id=? LIMIT 1 FOR UPDATE',
       [playerId]
     );
     const row = rows[0];
-    if (!row || String(row.status) !== 'active') throw new Error('账号不可用。');
+    if (!appAccountAvailable(row)) throw new Error('账号不可用。');
     if (row.password_hash) throw new Error('账号已设置密码，请使用修改密码。');
     const hash = await passwordHash(password);
     await connection.execute('UPDATE players SET password_hash=?,password_updated_at=NOW(),failed_login_count=0,locked_until=NULL WHERE id=?', [hash, playerId]);
-    await connection.execute('DELETE FROM app_sessions WHERE player_id=?', [playerId]);
+    await revokePlayerSessions(connection, playerId);
     return { token: await createSession(connection, playerId) };
   });
 };
@@ -233,6 +266,7 @@ export const changeAppPasswordByQqUser = async (qqUserId: string, currentPasswor
     if (!characters[0]?.game_id) throw new Error('尚未完成角色创建，无法修改跨平台密码。');
     const hash = await passwordHash(password);
     await connection.execute('UPDATE players SET password_hash=?,password_updated_at=NOW(),failed_login_count=0,locked_until=NULL WHERE id=?', [hash, Number(player.id)]);
+    await revokePlayerSessions(connection, Number(player.id));
     return { gameUserId: String(characters[0].game_id) };
   });
 };
@@ -244,14 +278,14 @@ export const changeAppPasswordByPlayerId = async (playerId: number, currentPassw
   if (!validPassword(currentPassword)) throw new Error('当前密码错误。');
   return withTransaction(async connection => {
     const [rows] = await connection.execute<RowDataPacket[]>(
-      'SELECT password_hash,status FROM players WHERE id=? LIMIT 1 FOR UPDATE',
+      'SELECT qq_user_id,password_hash,status FROM players WHERE id=? LIMIT 1 FOR UPDATE',
       [playerId]
     );
     const row = rows[0];
-    if (!row || String(row.status) !== 'active' || !await passwordMatches(currentPassword, row.password_hash)) throw new Error('当前密码错误。');
+    if (!appAccountAvailable(row) || !await passwordMatches(currentPassword, row.password_hash)) throw new Error('当前密码错误。');
     const hash = await passwordHash(password);
     await connection.execute('UPDATE players SET password_hash=?,password_updated_at=NOW(),failed_login_count=0,locked_until=NULL WHERE id=?', [hash, playerId]);
-    await connection.execute('DELETE FROM app_sessions WHERE player_id=?', [playerId]);
+    await revokePlayerSessions(connection, playerId);
     return { token: await createSession(connection, playerId) };
   });
 };
@@ -306,16 +340,36 @@ export const sessionForApp = async (token: string): Promise<AppSession | null> =
   const pool = await getPool();
   const hash = tokenHash(String(token ?? '').trim());
   const [rows] = await pool.execute<RowDataPacket[]>(
-    `SELECT s.player_id,p.qq_nickname,p.password_hash,p.id AS player_id,c.id AS character_id,c.game_id AS game_id
+    `SELECT s.player_id,p.qq_nickname,p.app_login_id,p.password_hash,p.id AS player_id,c.id AS character_id,c.game_id AS game_id
      FROM app_sessions s
      JOIN players p ON p.id=s.player_id
      LEFT JOIN characters c ON c.player_id=p.id AND c.npc_code IS NULL
-     WHERE s.token_hash=? AND s.expires_at>NOW() AND p.status='active' LIMIT 1`,
+     WHERE s.token_hash=? AND s.expires_at>NOW()
+       AND (p.status='active' OR (p.status='registering' AND LEFT(p.qq_user_id,4)='app_')) LIMIT 1`,
     [hash]
   );
-  const row = rows[0];
+  let row = rows[0];
+  if (!row) {
+    // 只兼容旧版的有效会话：绑定过 QQ 的账号沿用绑定玩家，否则使用原 app_ 玩家。
+    const [legacyRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT p.id AS player_id,p.qq_nickname,p.app_login_id,p.password_hash,c.id AS character_id,c.game_id AS game_id
+       FROM app_sessions s
+       JOIN app_users au ON au.app_user_id=s.app_user_id AND au.status='active'
+       LEFT JOIN player_app_bindings b ON b.app_user_id=au.app_user_id
+       LEFT JOIN players own_player ON own_player.qq_user_id=au.app_user_id
+       JOIN players p ON p.id=COALESCE(b.player_id,own_player.id)
+       LEFT JOIN characters c ON c.player_id=p.id AND c.npc_code IS NULL
+       WHERE s.token_hash=? AND s.expires_at>NOW() AND s.player_id IS NULL
+         AND LEFT(au.app_user_id,4)='app_'
+         AND (p.status='active' OR (p.status='registering' AND LEFT(p.qq_user_id,4)='app_'))
+       LIMIT 1`,
+      [hash]
+    );
+    row = legacyRows[0];
+  }
   if (!row) return null;
   return {
+    loginId: String(row.app_login_id ?? ''),
     gameUserId: row.game_id ? String(row.game_id) : '',
     displayName: String(row.qq_nickname ?? ''),
     passwordLoginEnabled: Boolean(row.password_hash),
@@ -354,7 +408,7 @@ export const revokeAppBinding = async (gameUserIdValue: string) => {
   await withTransaction(async connection => {
     const playerId = await playerIdByGameId(connection, gameId);
     if (!playerId) return;
-    await connection.execute('DELETE FROM app_sessions WHERE player_id=?', [playerId]);
+    await revokePlayerSessions(connection, playerId);
   });
 };
 

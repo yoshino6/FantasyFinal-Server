@@ -1,4 +1,4 @@
-import { advancedProfessionByCode, inheritancePassiveFor, renameAdvancedMentorText, type AdvancedProfession } from './advanced-profession.config';
+import { advancedProfessionByCode, inheritancePassiveFor, renameAdvancedMentorText, type AdvancedProfession, type MapHiddenAdvancedProfession } from './advanced-profession.config';
 import { spiritDefinitions } from './spirit-summoner.config';
 
 type MentorDialogue = { introduction: string; chats: { morning: string; afternoon: string; evening: string }; success: string };
@@ -7,6 +7,7 @@ const relation = (affinity: number) => affinity >= 500 ? '他看见你时，语�
 const period = () => { const hour = new Date().getHours(); return hour < 11 ? 'morning' as const : hour < 18 ? 'afternoon' as const : 'evening' as const; };
 
 export const mentorDialogues: Record<string, MentorDialogue> = {
+  mentor_arcane_magister: { introduction: '魔导将魔力集中在高威力的纯奥术上。玄衡要求你先计算蓝耗、冷却和奥术负荷，再决定何时施放决定战局的一击。', chats: { morning: '玄衡在薄光中画下一道未完成的术式：“先留出收束的位置，再谈威力。”', afternoon: '玄衡指向赤铁晶上的细纹：“魔力越重，越需要准确的落点。”', evening: '玄衡合上秘典：“今日剩余的魔力，够你修正一次错误吗？”' }, success: '最后一道奥式落下后，玄衡看见你留下足够的魔力稳住回路。他将秘典交到你手中：“威力不是毫无节制的释放，而是知道哪一击值得付出代价。”\n\n你已二转成功：魔导。' },
   mentor_bulwark_gareth: { introduction: '盾卫不是把所有伤害都扛在身上，而是在最危险的一瞬，替队友守住仍能选择的余地。加雷斯会教你判断何时站定、何时让步，以及一面盾该为谁举起。', chats: { morning: '加雷斯在根须旁擦拭旧盾。“晨练时先检查站姿。脚下不稳，再厚的盾也会被撞开。”', afternoon: '加雷斯看着树影移动。“下午的风会让人松懈。真正的守卫，应在没人看见时也保持警觉。”', evening: '加雷斯把盾靠在石旁。“夜里最难守的不是路口，是疲惫。回去休息，也是一种负责。”' }, success: '加雷斯的盾重重落在地上，根须间的尘屑随之散开。他没有立刻称赞，只让你回想方才每一次后退与站定。“你终于明白，盾不是为了挡住世界，而是让身后的人仍有向前的一步。”他将旧盾的缺角贴向你的掌心，光纹沿着臂甲亮起。世界树的叶影掠过肩头，你听见同伴的脚步声，也第一次清楚知道自己愿意守住什么。\n\n你已二转成功：盾卫。' },
   mentor_warlord_oren: { introduction: '战旗使以位置、号令和时机连接队伍。奥伦不教人只顾着冲在最前，而是让每个人在混战里知道该跟随什么、相信什么。', chats: { morning: '奥伦校正旗绳。“晨风最诚实。旗先向哪边倒，队伍就该先知道哪里有风。”', afternoon: '奥伦望向远处。“午后喧闹，号令要短。战场上说得太多，反而没人听得见。”', evening: '奥伦收起战旗。“夜里清点人数，比清点战果重要。别漏下任何一个人。”' }, success: '奥伦将战旗递给你，却没有替你系上旗结。你在风里亲手把旗结勒紧，回忆起山麓中每一次呼喊、停步与转向。“旗帜不会替队伍赢下战斗，”他朗声说道，“它只提醒所有人，他们并非独自站在这里。”旗面被叶脉的光照亮，风从你身后穿过，仿佛有许多人同时向前。你抬起旗杆，声音不再被风吞没。\n\n你已二转成功：战旗使。' },
   mentor_ironbreaker_noll: { introduction: '剑豪追求的是准确而克制的锋芒。诺尔要你明白，一剑的价值不在声势，而在看见破绽后仍能忍住多余的挥砍。', chats: { morning: '诺尔用钝剑敲了敲石面。“清晨练慢剑。慢下来，才能看出自己的手什么时候在发抖。”', afternoon: '诺尔看着晒热的岩石。“热会让人急，急会让剑路变宽。剑路宽了，空当就多。”', evening: '诺尔收剑入鞘。“今天的剑到这里。把一半力气留给明天，才走得远。”' }, success: '诺尔没有闪开最后一剑。剑势在他身前停住，只有风从刃脊滑过去。他望着你，许久后才点头：“这一剑该停就停，才算真能出。”岩脊核心在掌中裂开细亮的纹路，映出你曾犹豫、也曾果断的每一次挥斩。诺尔将木片从你的剑刃旁取下，锋光并不刺眼，却足以切开前路。你收剑时，心里只剩一条清楚的线。\n\n你已二转成功：剑豪。' },
@@ -42,11 +43,15 @@ export const mentorSuccessDialogue = (professionCode: string) => {
 };
 
 /** 二转前只谈方向；完整数值与机制在仪式完成后才作为职业档案公开。 */
-export const advancedProfessionReveal = (profession: AdvancedProfession) => {
+export const advancedProfessionReveal = (profession: AdvancedProfession | MapHiddenAdvancedProfession) => {
   const introduction = mentorDialogues[profession.mentor.code]?.introduction ?? profession.role;
   const lines = [`职业定位：${profession.role}`, `核心玩法：${introduction}`, `固有被动【${profession.passive.name}】：${profession.passive.description}`];
   const inheritance = inheritancePassiveFor(profession.code);
-  if (inheritance) lines.push(`传承被动【${inheritance.name}】：${inheritance.ownDescription}`, `旁修效果：${inheritance.studyDescription}（Lv.30 后可在其他导师处学习；只能装备一条已学旁修。）`);
+  if (inheritance) {
+    lines.push(`传承被动【${inheritance.name}】：${inheritance.ownDescription}`);
+    if (inheritance.study.length) lines.push(`旁修效果：${inheritance.studyDescription}（Lv.30 后可在其他导师处学习；只能装备一条已学旁修。）`);
+    else lines.push('这条传承仅随本职生效。');
+  }
   if (profession.code === 'spirit_summoner') {
     lines.push(`灵契名录：${spiritDefinitions.map(spirit => `${spirit.name}（${spirit.role}）`).join('、')}`);
     lines.push(`灵兽继承：${spiritDefinitions.map(spirit => `${spirit.name} HP${Math.round(spirit.statScale.hp * 100)}%｜法攻${Math.round(spirit.statScale.magicAttack * 100)}%｜双防${Math.round(spirit.statScale.physicalDefense * 100)}/${Math.round(spirit.statScale.magicDefense * 100)}%`).join('；')}`);

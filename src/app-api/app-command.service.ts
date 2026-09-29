@@ -48,6 +48,7 @@ import { divineCatalog, divineDetail, registrationScene } from '../game/divine-m
 import { formatToAppMessage, plainAppMessage, type AppMapData, type AppMessage } from './app-format';
 import { appSessionQqUser, type AppSession } from '../game/app-channel.service';
 import { experienceRequiredForLevel } from '../game/constants';
+import { registeredAdvancedProfessionByCode } from '../game/advanced-profession.config';
 import type { NegotiationCommand, NegotiationResult, NegotiationView } from '../game/negotiation.service';
 
 const openingText = async (view: any, reply = '我陪你把这段初行走完。'): Promise<AppMessage> =>
@@ -275,6 +276,8 @@ export type DesktopPanel = AppMessage & {
   account: {
     authenticated: true;
     uid: string;
+    loginId: string;
+    gameUserId: string;
     passwordLoginEnabled: boolean;
     hasCharacter: boolean;
     displayName: string;
@@ -293,6 +296,7 @@ export type DesktopPanel = AppMessage & {
     portrait?: {
       baseKey: string;
       poseKey: string;
+      fallbackKey?: string;
     };
     equipment?: {
       slot: string;
@@ -1414,9 +1418,8 @@ type EquippedPanelItem = Awaited<ReturnType<typeof equipment>>[number];
 /**
  * 立绘只传稳定的语义键，不把 web 的文件路径写进游戏服务。
  *
- * H5 使用整张透明 PNG 立绘切换：初始角色按性别使用基础立绘，
- * 选择一转职业后使用该职业独立的站立姿势。装备仍在装备栏显示，
- * 不再把无法保证对齐的部位贴图叠加到人物身上。
+ * H5 使用整张透明 PNG 立绘切换；二转优先显示对应职业，
+ * 未绘制时回退一转或初始立绘。装备仍在装备栏显示。
  */
 const portraitForCharacter = (character: NonNullable<Awaited<ReturnType<typeof getCharacter>>>) => {
   const genderKey = character.gender === '女' ? 'female' : 'male';
@@ -1428,8 +1431,15 @@ const portraitForCharacter = (character: NonNullable<Awaited<ReturnType<typeof g
         : professionCode === 'priest' || profession.includes('牧师') || profession.includes('祭司') ? 'priest'
           : professionCode === 'archer' || profession.includes('射手') || profession.includes('弓箭') ? 'archer'
             : null;
-  return {
-    baseKey: professionKey ? `profession_${professionKey}_${genderKey}` : `player_${genderKey}_initial`,
+  const fallbackKey = professionKey ? `profession_${professionKey}_${genderKey}` : `player_${genderKey}_initial`;
+  const advancedCode = String(character.advancedProfessionCode ?? '').trim();
+  const advanced = advancedCode ? registeredAdvancedProfessionByCode(advancedCode) : null;
+  return advanced ? {
+    baseKey: `advanced_${advanced.code}_${genderKey}`,
+    poseKey: `standing_${advanced.code}`,
+    fallbackKey
+  } : {
+    baseKey: fallbackKey,
     poseKey: professionKey ? `standing_${professionKey}` : 'standing_initial'
   };
 };
@@ -1526,7 +1536,7 @@ export const appQuickPanel = async (session: AppSession): Promise<DesktopPanel> 
     })),
     portrait: portraitForCharacter(character),
     ...(movement ? { movement: { step: Number(movement.step), maximum: Number(movement.maximum) } } : {}),
-    ...(travel ? { travel: { destination: String(travel.destinationName ?? travel.regionName ?? ''), remaining: Number(travel.remaining ?? 0) } } : {}),
+    ...(travel ? { travel: { destination: String(travel.destinationName ?? travel.regionName ?? ''), remaining: Number(travel.remaining ?? 0), activityType: travel.activityType } } : {}),
     unreadMail: 0,
       ...(encounter?.spawns?.length ? { encounter: { count: encounter.spawns.length } } : {})
   } : undefined;
@@ -1545,7 +1555,9 @@ export const appQuickPanel = async (session: AppSession): Promise<DesktopPanel> 
     ...(movement ? { movement } : {}),
     account: {
       authenticated: true,
-      uid: session.gameUserId,
+      uid: session.gameUserId || session.loginId,
+      loginId: session.loginId,
+      gameUserId: session.gameUserId,
       passwordLoginEnabled: session.passwordLoginEnabled,
       hasCharacter: Boolean(character),
       displayName: session.displayName

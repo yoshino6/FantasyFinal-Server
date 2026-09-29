@@ -1,6 +1,6 @@
 import { Format, useEvent, useRoute } from 'alemonjs';
 import { useGameMessage as useMessage } from '../game/use-game-message';
-import { depositHomeStorage, homeStorageView, type HomeStorageCategory, type HomeStorageScope } from '../game/home.service';
+import { depositHomeStorage, homeStorageView, withdrawHomeStorage, type HomeStorageCategory, type HomeStorageScope } from '../game/home.service';
 import { messageFormat } from '../game/message';
 
 const categories: HomeStorageCategory[] = ['装备', '道具', '材料'];
@@ -22,7 +22,8 @@ const storageFormat = async (qqUserId: string, scope: HomeStorageScope, category
     if (item.type === 'instance') markdown.addButton(`【${item.item_category}】${item.name}`, { data: `/装备详情 ${item.id}`, autoEnter: false }).addText(`｜品质 ${Number(item.quality).toFixed(2)}%｜耐久 ${item.durability}/${item.durability_max}`);
     else {
       markdown.addButton(`【${item.item_category}】${item.name}`, { data: `/物品图鉴 ${item.codex_id}`, autoEnter: false }).addText(` × ${item.quantity}`);
-      if (scope === 'backpack') markdown.addText(' ').addButton('[放入]', { data: `/家园放入 ${item.id} `, autoEnter: false });
+      markdown.addText(' ').addButton(scope === 'backpack' ? '[放入]' : '[取出]',
+        { data: `/${scope === 'backpack' ? '家园放入' : '家园取出'} ${item.id} `, autoEnter: false });
     }
     markdown.addNewline();
   }
@@ -55,4 +56,11 @@ export const homeStorageDepositHandler = async () => {
     const result = await depositHomeStorage(event.current.UserId, Number(route.param('id')), Number(route.param('quantity')));
     await message.send({ format: messageFormat('放入完成', `已放入【${result.name}】×${result.quantity}\n仓储负重：${result.usedWeight.toFixed(2)}/${result.capacity.toFixed(2)} kg`) });
   } catch (error) { await message.send({ format: messageFormat('无法放入', error instanceof Error ? error.message : '请稍后重试。') }); }
+};
+export const homeStorageWithdrawHandler = async () => {
+  const [event] = useEvent(); const [route] = useRoute(); const [message] = useMessage();
+  try {
+    const result = await withdrawHomeStorage(event.current.UserId, Number(route.param('id')), Number(route.param('quantity')));
+    await message.send({ format: messageFormat('取出完成', `已取出【${result.name}】×${result.quantity}\n仓储负重：${result.usedWeight.toFixed(2)}/${result.capacity.toFixed(2)} kg`) });
+  } catch (error) { await message.send({ format: messageFormat('无法取出', error instanceof Error ? error.message : '请稍后重试。') }); }
 };

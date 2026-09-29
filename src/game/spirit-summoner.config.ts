@@ -11,7 +11,7 @@ export type SpiritDefinition = {
   statScale: { hp: number; physicalAttack: number; magicAttack: number; physicalDefense: number; magicDefense: number; accuracy: number; evasion: number; crit: number; speed: number };
 };
 
-export const spiritSummonerPassiveDescription = '每回合额外恢复 2% 魔力；灵位上限从 1 提升至 3。';
+export const spiritSummonerPassiveDescription = '最大魔力提高 18%，每回合额外恢复 4% 最大魔力；灵位上限从 1 提升至 3，召唤物最大生命提高 20%。';
 
 export const spiritDefinitions: SpiritDefinition[] = [
   { code: 'ember', skillCode: 'spirit_call_ember', name: '炽羽雀', duration: 4, role: '单体火焰追击', statScale: { hp: .38, physicalAttack: .15, magicAttack: .78, physicalDefense: .25, magicDefense: .42, accuracy: .75, evasion: .88, crit: .75, speed: 1.12 } },
@@ -23,3 +23,9 @@ export const spiritDefinitions: SpiritDefinition[] = [
 
 export const spiritDefinitionBySkill = (skillCode: string) => spiritDefinitions.find(spirit => spirit.skillCode === skillCode);
 export const spiritSummonerActiveSkillCodes = spiritDefinitions.map(spirit => spirit.skillCode);
+
+/** 旧公开唤灵师已学技能保持可识别；新隐藏路线只授予四个新指令。 */
+export const legacySpiritSummonerSkillCodes = [
+  ...spiritSummonerActiveSkillCodes,
+  'summoner_contract_spirit', 'summoner_spirit_tether', 'summoner_returning_veil', 'summoner_star_pact'
+];

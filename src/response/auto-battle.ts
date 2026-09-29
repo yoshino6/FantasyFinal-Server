@@ -28,7 +28,7 @@ const configFormat = async (qqUserId: string, mode: AutoBattleMode = 'pve') => {
 };
 
 const choiceFormat = async (qqUserId: string, sequence: number, page: number, keyword: string, quick = false, mode: AutoBattleMode = 'pve') => {
-  const data = await autoBattleSkills(qqUserId, page, keyword); const markdown = Format.createMarkdown().addTitle(quick ? '出招快速配置' : '出招选择').addNewline().addNewline();
+  const data = await autoBattleSkills(qqUserId, page, keyword, mode); const markdown = Format.createMarkdown().addTitle(quick ? '出招快速配置' : '出招选择').addNewline().addNewline();
   if (quick) markdown.addText(`当前出招${'①②③④⑤⑥⑦⑧⑨⑩'.charAt(sequence - 1) || sequence}：\n`);
   const suffix = modeArg(mode); data.choices.forEach((choice, index) => markdown.addText(`${quick ? '' : `${index + 1}. `}`).addButton(actionName(choice.name), { data: quick ? `/自动战斗 快速选择 ${choice.id ?? 0}${suffix}` : `/自动战斗 选择出招 ${sequence} ${choice.id ?? 0}${suffix}`, autoEnter: false }).addNewline());
   const search = quick ? `/自动战斗 快速搜索${suffix} ` : `/自动战斗 出招搜索 ${sequence}${suffix} `;

@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto';
 import { recordCharacterOperation } from './character-operation.service';
 import { readRuleState, visibleResidentBuff } from './combat-rule-registry';
 import { assertCombatLoadoutMutable } from './combat-loadout-lock.service';
+import { newAdvancedSkillDefinitions } from './map-hidden-advanced-skills.config';
+import { legacySpiritSummonerSkillCodes } from './spirit-summoner.config';
 
 type CharacterRow = RowDataPacket & { id: number };
 type ActionRow = RowDataPacket & { sequence_no: number; skill_id: number | null; name: string | null };
@@ -15,6 +17,10 @@ export type AutoBattleMode = 'pve' | 'pvp';
 const autoTables = (mode: AutoBattleMode) => mode === 'pvp'
   ? { settings: 'player_pvp_auto_battle_settings', actions: 'player_pvp_auto_battle_actions', quick: 'player_pvp_auto_battle_quick_setup' }
   : { settings: 'player_auto_battle_settings', actions: 'player_auto_battle_actions', quick: 'player_auto_battle_quick_setup' };
+const unavailableAutoSkillCodes = {
+  pve: new Set(legacySpiritSummonerSkillCodes),
+  pvp: new Set([...legacySpiritSummonerSkillCodes, ...newAdvancedSkillDefinitions.map(skill => skill.code)])
+};
 
 const characterIdFor = async (qqUserId: string) => {
   const pool = await getPool();
@@ -68,24 +74,26 @@ export const setAutoPotionEnabled = async (qqUserId: string, enabled: boolean, m
   return enabled;
 });
 
-export const autoBattleSkills = async (qqUserId: string, page = 1, keyword = '') => {
+export const autoBattleSkills = async (qqUserId: string, page = 1, keyword = '', mode: AutoBattleMode = 'pve') => {
   const characterId = await characterIdFor(qqUserId); const pool = await getPool(); const like = `%${keyword}%`;
-  const [rows] = await pool.execute<(RowDataPacket & { id: number; name: string })[]>('SELECT s.id,s.name FROM player_skills ps JOIN skill_definitions s ON s.id=ps.skill_id WHERE ps.character_id=? AND s.category IN (\'physical\',\'magic\',\'utility\') AND s.name LIKE ? ORDER BY ps.learned_at,s.id', [characterId, like]);
+  const [learned] = await pool.execute<(RowDataPacket & { id: number; code: string; name: string })[]>('SELECT s.id,s.code,s.name FROM player_skills ps JOIN skill_definitions s ON s.id=ps.skill_id WHERE ps.character_id=? AND s.category IN (\'physical\',\'magic\',\'utility\') AND s.name LIKE ? ORDER BY ps.learned_at,s.id', [characterId, like]);
+  const rows = learned.filter(skill => !unavailableAutoSkillCodes[mode].has(skill.code));
   const total = Math.max(1, Math.ceil((rows.length + 1) / 10)); const safePage = Math.max(1, Math.min(total, page));
   const choices = [{ id: null as number | null, name: '普通攻击' }, ...rows.map(row => ({ id: Number(row.id), name: row.name }))].slice((safePage - 1) * 10, safePage * 10);
   return { choices, page: safePage, total };
 };
 
-const assertSkill = async (connection: any, characterId: number, skillId: number | null) => {
+const assertSkill = async (connection: any, characterId: number, skillId: number | null, mode: AutoBattleMode) => {
   if (skillId === null) return;
-  const [rows] = await connection.execute('SELECT 1 FROM player_skills ps JOIN skill_definitions s ON s.id=ps.skill_id WHERE ps.character_id=? AND ps.skill_id=? AND s.category IN (\'physical\',\'magic\',\'utility\')', [characterId, skillId]) as [RowDataPacket[]];
+  const [rows] = await connection.execute('SELECT s.code FROM player_skills ps JOIN skill_definitions s ON s.id=ps.skill_id WHERE ps.character_id=? AND ps.skill_id=? AND s.category IN (\'physical\',\'magic\',\'utility\')', [characterId, skillId]) as [(RowDataPacket & { code: string })[]];
   if (!rows[0]) throw new Error('只能配置已经学习的主动技能。');
+  if (unavailableAutoSkillCodes[mode].has(rows[0].code)) throw new Error(mode === 'pvp' ? '该技能暂不可用于玩家对战自动出招。' : '旧唤灵师技能已收束至四个新指令，不能再配置自动出招。');
 };
 
 export const saveAutoBattleAction = async (qqUserId: string, sequence: number, skillId: number | null, mode: AutoBattleMode = 'pve') => withTransaction(async connection => {
   const characterId = await mutableCharacterIdFor(connection, qqUserId);
   if (!Number.isInteger(sequence) || sequence < 1 || sequence > 30) throw new Error('出招位置需在 1 至 30 之间。');
-  await assertSkill(connection, characterId, skillId);
+  await assertSkill(connection, characterId, skillId, mode);
   const [changed]=await connection.execute<any>(`INSERT INTO ${autoTables(mode).actions} (character_id,sequence_no,skill_id) VALUES (?,?,?) ON DUPLICATE KEY UPDATE skill_id=VALUES(skill_id)`, [characterId, sequence, skillId]);
   if(Number(changed.affectedRows)>0)await recordAutoConfiguration(connection,characterId,mode,`设置自动出招 ${sequence}`,{setting:'action',sequence,skillId});
 });
@@ -107,7 +115,7 @@ export const beginAutoBattleQuickSetup = async (qqUserId: string, mode: AutoBatt
 export const saveQuickAutoBattleAction = async (qqUserId: string, skillId: number | null, mode: AutoBattleMode = 'pve') => withTransaction(async connection => {
   const characterId = await mutableCharacterIdFor(connection, qqUserId);
   const tables = autoTables(mode); const [setup] = await connection.execute<(RowDataPacket & { next_sequence: number })[]>(`SELECT next_sequence FROM ${tables.quick} WHERE character_id=? FOR UPDATE`, [characterId]); if (!setup[0]) throw new Error('请先点击“快速配置”。');
-  const sequence = Number(setup[0].next_sequence); await assertSkill(connection, characterId, skillId);
+  const sequence = Number(setup[0].next_sequence); await assertSkill(connection, characterId, skillId, mode);
   await connection.execute(`INSERT INTO ${tables.actions} (character_id,sequence_no,skill_id) VALUES (?,?,?)`, [characterId, sequence, skillId]);
   await connection.execute(`UPDATE ${tables.quick} SET next_sequence=next_sequence+1 WHERE character_id=?`, [characterId]);
   await recordAutoConfiguration(connection,characterId,mode,`快速配置自动出招 ${sequence}`,{setting:'quick_action',sequence,skillId});return sequence + 1;
@@ -163,7 +171,13 @@ const configuredAutoAction = async (pool: Awaited<ReturnType<typeof getPool>>, s
   if (selected.skill_id !== null && selected.learned_skill_id === null) {
     return { type: 'attack' };
   }
+  if (unavailableAutoSkillCodes.pve.has(selected.code)) return { type: 'attack' };
   const cooldowns = typeof state.cooldowns === 'string' ? JSON.parse(state.cooldowns) : state.cooldowns;
+  // 准备状态尚未消费时，自动出招不重复占用行动刷新同一个窗口。
+  if (selected.code === 'sword_shadow_sheathe' && cooldowns?.__swordSheathe
+    || selected.code === 'arcane_precast' && cooldowns?.__arcanePrecast
+    || selected.code === 'stringblade_draw' && cooldowns?.__stringbladeDraw
+    || selected.code === 'sword_shadow_polish' && Number(cooldowns?.__swordPolishUntil ?? 0) >= Number(state.turn_no)) return { type: 'attack' };
   if (visibleResidentBuff(readRuleState(cooldowns?.__rules), selected.code, Number(state.turn_no))) return { type: 'attack' };
   return selected.skill_id === null ? { type: 'attack' } : { type: 'skill', skillId: Number(selected.skill_id) };
 };

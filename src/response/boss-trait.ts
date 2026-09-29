@@ -35,7 +35,7 @@ export default async () => {
       const bosses = battle.targets.filter(target => target.isBoss && !target.isBossComponent);
       if (bosses.length) {
         foundBoss = true;
-        lines = uniqueLines(bosses.flatMap(target => target.randomEffects));
+        lines = uniqueLines(bosses.flatMap(target => target.randomEffects ?? []));
         cards = bosses.flatMap(target => target.difficultyCode
           ? [{ bossCode: String(target.bossCode), bossName: String(target.name), difficultyCode: target.difficultyCode as Level32BossDifficultyCode, effects: target.randomEffects }]
           : []);

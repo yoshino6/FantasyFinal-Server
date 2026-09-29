@@ -10,7 +10,7 @@ import { craftsmanshipEffect } from '../game/blacksmith.service';
 import { advancedResourceForProfession, advancedSkillDescriptions, advancedResourceRequirementForSkill } from '../game/advanced-resource.config';
 import {folioSkillByCode} from '../game/active-folio-skills.config';
 import {folioEffectPreview} from '../game/folio-effect.config';
-import { advancedBoundSkillDefinitions, advancedProfessionPassiveCodes, hasBattleOnlyAdvancedPassiveEffect, isAdvancedProfessionSkillCode, worldTreeAdvancedProfessions } from '../game/advanced-profession.config';
+import { advancedBoundSkillDefinitions, advancedProfessionPassiveCodes, hasBattleOnlyAdvancedPassiveEffect, isAdvancedProfessionSkillCode } from '../game/advanced-profession.config';
 
 const categoryNames: Record<string, string> = { physical: '物理', magic: '魔法', utility: '辅助', passive: '被动', bound: '绑定', special: '特殊' };
 type SkillEffectDetail = { code: string; name: string; effect_type: string; value: number; duration: number; target_scope: 'enemy' | 'ally' | 'self'; trigger_timing: 'on_hit' | 'on_cast' };
@@ -275,8 +275,8 @@ export const skillDetailHandler = async () => {
       if (bound) markdown.addNewline().addBlockquote(`本职${bound.kind}：常驻生效，不占普通被动槽；切换二转时随职业更换。`);
       if (bound?.kind === '传承') markdown.addNewline().addBlockquote('传承按本职规则触发，不会因列入技能列表而重复结算。');
       else if (advancedProfessionPassiveCodes.has(skill.code)) {
-        const profession = worldTreeAdvancedProfessions.find(entry => entry.passive.code === skill.code);
-        if (!profession || hasBattleOnlyAdvancedPassiveEffect(profession.code)) markdown.addNewline().addBlockquote('战斗规则：此效果仅在战斗结算时生效，不会增加角色详情中的基础属性。');
+        const profession = advancedBoundSkillDefinitions.find(entry => entry.code === skill.code);
+        if (!profession || hasBattleOnlyAdvancedPassiveEffect(profession.professionCode)) markdown.addNewline().addBlockquote('战斗规则：此效果仅在战斗结算时生效，不会增加角色详情中的基础属性。');
         else markdown.addNewline().addBlockquote('属性规则：此效果已在角色属性重算时写入角色详情，不会在战斗中重复叠加。');
       }
     }

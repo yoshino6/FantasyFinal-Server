@@ -23,7 +23,8 @@ import { currentMainQuest } from '../game/main-quest.service';
 import { npcChatDialogue } from '../game/npc-dialogue.service';
 import { dynamicNpcChatDialogue, dynamicNpcProfile } from '../game/dynamic-npc-dialogue.service';
 import { advancedProfessionReveal, mentorSuccessDialogue } from '../game/advanced-profession.dialogue';
-import { advancedProfessionByCode } from '../game/advanced-profession.config';
+import { advancedProfessionByCode, mapHiddenAdvancedProfessionByCode } from '../game/advanced-profession.config';
+import { mapHiddenMentorAtCurrentCell } from '../game/map-hidden-advanced-profession.service';
 import { spiritDefinitions } from '../game/spirit-summoner.config';
 import { changeDungeonFloor, dungeonPvP, dungeonTrackingHint, enterDungeon, interactDungeonPlayer, openDungeonChest } from '../game/dungeon.service';
 import { dungeonSecretProgress } from '../game/dungeon-quest.service';
@@ -83,8 +84,8 @@ const leaveHomeForMovement = async (message: any, qqUserId: string) => {
 };
 const moveButtons = panelButtons;
 export const movementButtons = async (qqUserId: string, resting = false) => {
-  const [config, blockedDirections] = await Promise.all([autoBattleConfig(qqUserId), blockedDungeonDirections(qqUserId)]);
-  return panelButtons(resting, Boolean(config.settings.enabled), blockedDirections);
+  const [config, blockedDirections, hiddenMentor] = await Promise.all([autoBattleConfig(qqUserId), blockedDungeonDirections(qqUserId), mapHiddenMentorAtCurrentCell(qqUserId)]);
+  return panelButtons(resting, Boolean(config.settings.enabled), blockedDirections, hiddenMentor);
 };
 // 战斗按键使用两字简称，技能详情与战斗日志继续使用完整技能名称。
 const advancedBattleSkillLabels: Record<string, string> = {
@@ -104,7 +105,7 @@ const advancedBattleSkillLabels: Record<string, string> = {
   gunner_cluster: '散射', gunner_minefield: '雷区', gunner_artillery: '重炮', gunner_smoke_bomb: '爆烟',
   ranger_hunters_mark: '雾枭', ranger_trap_barrage: '栗影', ranger_flanking_shot: '青鳞', ranger_eagle_eye: '同契'
 };
-const addAdvancedBattleButton = (row: ReturnType<typeof Format.createButtonGroup>, label: string, command: string, ready: boolean, autoEnter = true) => row.addButton(label, command, {
+const addAdvancedBattleButton = (row: ReturnType<typeof Format.createButtonGroup>, label: string, command: string, ready: boolean, autoEnter = false) => row.addButton(label, command, {
   type: 'command', autoEnter, style: ready ? 'blue' : 'gray'
 });
 const battleButtons = (battle: Awaited<ReturnType<typeof battleStatus>>) => {
@@ -123,6 +124,9 @@ const battleButtons = (battle: Awaited<ReturnType<typeof battleStatus>>) => {
     } else for (const [index, skill] of battle.advancedSkills.entries()) {
       if (index > 0 && index % 5 === 0) row = buttons.addRow();
       addAdvancedBattleButton(row, hiddenSkill(skill.code)?.button ?? advancedBattleSkillLabels[skill.code] ?? Array.from(skill.name).slice(0, 2).join(''), `/二转技能 ${skill.id}`, battle.canAct && skill.ready);
+    }
+    if (battle.advancedSkills.some(skill => skill.code === 'summoner_call')) {
+      buttons.addRow().addButton('选择灵体', '/灵体选择', { type: 'command', autoEnter: false, style: 'blue' });
     }
   }
   buttons.addRow();
@@ -155,6 +159,7 @@ export const appendBattleState = (markdown: ReturnType<typeof Format.createMarkd
     markdown.addText(` HP ${member.hp}/${member.hpMax}｜MP ${member.mp}/${member.mpMax}${member.resource ? `｜${member.resource.name} ${member.resource.current}/${member.resource.max}` : ''}${member.defeated ? '（倒下）' : member.chanting ? `（吟唱：${member.chanting}）` : member.pending ? '（已确认）' : member.extraAction ? '（额外行动）' : ''}\n`);
     if (member.statusText) markdown.addBlockquote(`状态：${member.statusText}`).addNewline();
   }
+  if (battle.titanWounds?.length) markdown.addBlockquote(`泰坦伤势：${battle.titanWounds.map(tick => `第${tick.turn}回合 HP -${tick.amount}`).join('｜')}`).addNewline();
   if (battle.spirits.length) markdown.addBlockquote(`灵兽：${battle.spirits.map(spirit => `〖${spirit.name}〗HP ${spirit.hp}/${spirit.hpMax}·${spirit.remainingTurns}回合`).join('｜')}`).addNewline();
   if (battle.mode !== 'spar' && battle.deviceSlots.length) markdown.addBlockquote(`异械：${battle.deviceSlots.map(device => `${device.deviceName} ${device.currentEnergy}/${device.maxEnergy}`).join('｜')}`).addNewline();
   markdown.addNewline();
@@ -236,7 +241,7 @@ export const bossPhaseTransitionFormat = (transitions: BossPhaseTransition[]) =>
   }
   return Format.create().addMarkdown(markdown);
 };
-const victoryButtons = (arrivalPending = false) => Format.createButtonGroup().addRow().addButton(arrivalPending ? '继续' : '操作面板', arrivalPending ? '/继续剧情' : '/面板', { type: 'command', autoEnter: true, style: 'blue' });
+const victoryButtons = (arrivalPending = false) => Format.createButtonGroup().addRow().addButton(arrivalPending ? '继续' : '操作面板', arrivalPending ? '/继续剧情' : '/面板', { type: 'command', autoEnter: false, style: 'blue' });
 const isVictorySettlement = (value: unknown): value is VictorySettlement => Boolean(value) && typeof value === 'object' && (value as VictorySettlement).kind === 'victory';
 const victoryFormat = (settlement: VictorySettlement) => {
   const markdown = Format.createMarkdown().addTitle('战斗胜利').addNewline().addNewline();
@@ -257,14 +262,28 @@ const victoryFormat = (settlement: VictorySettlement) => {
   }
   if (settlement.members.some(reward => reward.levelText?.includes('Lv.8'))) markdown.addText('发现新支线【职业之外的道路】\n去百纳镇的各个店铺转转，或许能找到适合自己的副职业。').addNewline();
   for (const completed of settlement.advancedProfessionCompleted ?? []) {
-    const profession = advancedProfessionByCode(completed.code);
+    const profession = advancedProfessionByCode(completed.code) ?? mapHiddenAdvancedProfessionByCode(completed.code);
     markdown.addNewline().addText(`【${completed.name}】的二转仪式`).addNewline().addNewline().addBlockquote(mentorSuccessDialogue(completed.code) ?? `你已二转成功：${completed.profession}。`).addNewline();
     if (profession) markdown.addText(`【${profession.name}】职业档案已解锁`).addNewline().addBlockquote(advancedProfessionReveal(profession)).addNewline();
     markdown.addText(`技能点已重置：返还 ${completed.refundedSkillPoints} 点，当前可分配 ${completed.availableSkillPoints} 点。`).addNewline();
   }
+  for (const qualification of settlement.mapHiddenQualifications ?? []) {
+    markdown.addNewline().addText(`【${qualification.name}】已通过${qualification.profession}隐藏导师试炼，永久资格已记录。`).addNewline()
+      .addBlockquote('当前重新二转冷却尚未结束；冷却结束后，请回到已发现的导师所在格申请转职。').addNewline();
+  }
+  for (const trial of settlement.mapHiddenTrialFailures ?? []) markdown.addNewline()
+    .addText(`【${trial.name}】击败了${trial.profession}导师，但本场专项目标尚未全部达成，未取得二转资格。`).addNewline()
+    .addBlockquote(trial.instruction).addNewline()
+    .addText('请在导师所在格重新开启试炼。').addNewline();
   if (settlement.dungeonSecretCompleted) markdown.addText('【地下的秘密】已完成。').addNewline();
   if (settlement.pursuitCooldownMinutes) markdown.addText(`你击退了城镇执法者，暂时脱离追捕。${settlement.pursuitCooldownMinutes} 分钟内不会再遭到强制拦截。`).addNewline();
-  return Format.create().addMarkdown(markdown);
+  const format = Format.create().addMarkdown(markdown);
+  if (settlement.mapHiddenTrialFailures?.length) {
+    const buttons = Format.createButtonGroup().addRow();
+    for (const trial of settlement.mapHiddenTrialFailures) buttons.addButton(`查看${trial.profession}导师`, `/隐藏导师 ${trial.code}`, { type: 'command', autoEnter: false, style: 'blue' });
+    format.addButtonGroup(buttons);
+  }
+  return format;
 };
 const realmBarrierFormat = () => Format.create()
   .addMarkdown(Format.createMarkdown().addTitle('无形的禁锢').addNewline().addNewline()

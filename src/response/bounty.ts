@@ -1,4 +1,5 @@
 import { hiddenTrackedQuests } from '../game/hidden-quest.service';
+import { mapHiddenTrackedQuests } from '../game/map-hidden-advanced-profession.service';
 import { alchemyCreationQuest, alchemyCreationQuestTitle } from '../game/alchemy-creation-quest.service';
 import { Format, useEvent, useRoute } from 'alemonjs';
 import { useGameMessage as useMessage } from '../game/use-game-message';
@@ -59,7 +60,7 @@ const taskButtons = (category: TaskCategory | undefined, page: number, totalPage
 };
 
 export const taskFormat = async (qqUserId: string, category?: TaskCategory, page = 1, keyword = '') => {
-  const [mainQuest, advancedQuest, bounties, smithQuest, alchemyQuest, deconstructQuest, omniscientQuestProgress, dungeonSecret, needsSecondaryGuide, evolutionObservations, siteCommissions, creationQuest, hiddenQuests] = await Promise.all([currentMainQuest(qqUserId), advancedProfessionMainQuest(qqUserId), playerBounties(qqUserId), blacksmithQuest(qqUserId), alchemistQuest(qqUserId), deconstructorQuest(qqUserId), omniscientQuest(qqUserId), dungeonSecretProgress(qqUserId), secondaryProfessionGuide(qqUserId), evolutionObservationDashboard(qqUserId).catch(() => null), playerWorldSiteCommissions(qqUserId), alchemyCreationQuest(qqUserId), hiddenTrackedQuests(qqUserId)]);
+  const [mainQuest, advancedQuest, bounties, smithQuest, alchemyQuest, deconstructQuest, omniscientQuestProgress, dungeonSecret, needsSecondaryGuide, evolutionObservations, siteCommissions, creationQuest, hiddenQuests, mapHiddenQuests] = await Promise.all([currentMainQuest(qqUserId), advancedProfessionMainQuest(qqUserId), playerBounties(qqUserId), blacksmithQuest(qqUserId), alchemistQuest(qqUserId), deconstructorQuest(qqUserId), omniscientQuest(qqUserId), dungeonSecretProgress(qqUserId), secondaryProfessionGuide(qqUserId), evolutionObservationDashboard(qqUserId).catch(() => null), playerWorldSiteCommissions(qqUserId), alchemyCreationQuest(qqUserId), hiddenTrackedQuests(qqUserId), mapHiddenTrackedQuests(qqUserId)]);
   const entries: TaskEntry[] = [{ category: '主线', ...mainQuest }, ...(advancedQuest ? [{ category: '主线' as const, ...advancedQuest }] : []), ...bounties.map(task => ({
     category: '悬赏' as const, title: `【悬赏·${task.id}】${task.title}`,
     description: task.status === 'invalid' ? '已失效：悬赏目标已被其他冒险者完成，或该悬赏已经过期。' : `讨伐：${task.targetName} ${task.progress}/${task.requiredCount}\n报酬：铜币 ×${task.copperReward}、贡献度 ×${task.contributionReward}`,
@@ -67,7 +68,7 @@ export const taskFormat = async (qqUserId: string, category?: TaskCategory, page
     action: task.status === 'invalid' ? { label: '[清除]', command: `/清除悬赏 ${task.id}` } : task.status === 'completed' ? { label: '[领取悬赏]', command: `/领取悬赏 ${task.id}` } : undefined,
     abandonCommand: `/放弃悬赏 ${task.id}`
   }))];
-  entries.push(...hiddenQuests.map(quest => ({ category: '支线' as const, ...quest })));
+  entries.push(...hiddenQuests.map(quest => ({ category: '支线' as const, ...quest })), ...mapHiddenQuests.map(quest => ({ category: '支线' as const, ...quest })));
   if (smithQuest.status === 'accepted' || smithQuest.status === 'completed') entries.push({
     category: '支线', title: '【副职业·锻造师入门】', description: `收集活木：${smithQuest.wood}/1\n收集兽核：${smithQuest.core}/1`,
     action: smithQuest.status === 'completed' ? { label: '[前往提交 铁匠铺(-17,-191)]', command: '/前往 -17 -191 0' } : undefined,

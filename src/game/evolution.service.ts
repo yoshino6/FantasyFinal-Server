@@ -20,7 +20,7 @@ type ProfileRow = RowDataPacket & {
   character_id: number; unlocked_level: number; injection_count: number; evolution_scale: number; adaptation_pressure: number; stability: number;
   fixed_bonus_json: unknown; lineage_marks_json: unknown; active_lineage: string | null; final_traits_json: unknown; symbiosis_trait_code: SymbiosisTraitCode | null; daily_key: string | null; daily_claims: number;
 };
-type CharacterEvolutionRow = RowDataPacket & { id: number; name: string; level: number; experience: number; realm_stage: number; profession_code: string | null; evolution_stage: number };
+type CharacterEvolutionRow = RowDataPacket & { id: number; name: string; level: number; experience: number; realm_stage: number; profession_code: string | null; evolution_stage: number; current_region_id: number; pos_x: number; pos_y: number; pos_z: number };
 type MutationRow = RowDataPacket & { id: number; body_part: BodyPart; mutation_code: string; mutation_name: string; mutation_state: MutationState; tier: number; source_injection: string; effect_json: unknown; description: string };
 type InventoryRow = RowDataPacket & { code: string; quantity: number; item_id: number };
 type EvolutionEventRow = RowDataPacket & { event_type: string; payload: unknown; created_at: string | Date };
@@ -152,11 +152,36 @@ const profileFor = async (connection: EvolutionConnection, characterId: number, 
   return rows[0] ?? null;
 };
 const characterFor = async (connection: EvolutionConnection, qqUserId: string, lock = false) => {
-  const [rows] = await connection.execute<CharacterEvolutionRow[]>(`SELECT c.id,c.name,c.level,c.experience,c.realm_stage,c.profession_code,
+  const [rows] = await connection.execute<CharacterEvolutionRow[]>(`SELECT c.id,c.name,c.level,c.experience,c.realm_stage,c.profession_code,c.current_region_id,c.pos_x,c.pos_y,c.pos_z,
     COALESCE((SELECT q.stage FROM player_main_quest_progress q WHERE q.character_id=c.id AND q.quest_code='evolution_barrier' LIMIT 1),0) AS evolution_stage
     FROM characters c JOIN players p ON p.id=c.player_id WHERE p.qq_user_id=? LIMIT 1${lock ? ' FOR UPDATE' : ''}`, [qqUserId]);
   if (!rows[0]) throw new Error('请先注册角色。');
   return rows[0];
+};
+const assertAtEvolutionLab = async (connection: EvolutionConnection, character: CharacterEvolutionRow) => {
+  if (Number(character.evolution_stage) < 8 || !await profileFor(connection, Number(character.id))) throw new Error('这扇门尚未向你显现。');
+  const [rows] = await connection.execute<RowDataPacket[]>(`SELECT 1 FROM map_npcs WHERE code='evolution_lab' AND region_id=? AND pos_x=? AND pos_y=? AND pos_z=? LIMIT 1`,
+    [character.current_region_id, character.pos_x, character.pos_y, character.pos_z]);
+  if (!rows[0]) throw new Error('你已经离开该目标坐标，无法继续互动。');
+};
+export const requireEvolutionLabTarget = async (connection: EvolutionConnection, qqUserId: string, lock = false) => {
+  const character = await characterFor(connection, qqUserId, lock);
+  await assertAtEvolutionLab(connection, character);
+  return { characterId: Number(character.id), target: { id: 'evolution_lab', name: '演化研究室', locationRequired: true } };
+};
+export const evolutionLabSite = async (qqUserId: string) => {
+  const pool = await getPool();
+  const character = await characterFor(pool, qqUserId);
+  const unlocked = Number(character.evolution_stage) >= 8 && Boolean(await profileFor(pool, Number(character.id)));
+  if (!unlocked) return { unlocked: false, atSite: false, target: null };
+  const [rows] = await pool.execute<(RowDataPacket & { region_id: number; region_code: string; region_name: string; name: string; pos_x: number; pos_y: number; pos_z: number })[]>(`SELECT n.region_id,r.code AS region_code,r.name AS region_name,n.name,n.pos_x,n.pos_y,n.pos_z
+    FROM map_npcs n JOIN map_regions r ON r.id=n.region_id WHERE n.code='evolution_lab' LIMIT 1`);
+  const site = rows[0]; if (!site) throw new Error('演化研究室的地图位置暂不可用。');
+  return { unlocked: true,
+    atSite: Number(character.current_region_id) === Number(site.region_id) && Number(character.pos_x) === Number(site.pos_x)
+      && Number(character.pos_y) === Number(site.pos_y) && Number(character.pos_z) === Number(site.pos_z),
+    target: { id: 'evolution_lab', name: site.name, regionId: Number(site.region_id), regionCode: site.region_code,
+      regionName: site.region_name, x: Number(site.pos_x), y: Number(site.pos_y), z: Number(site.pos_z), locationRequired: true } };
 };
 const createProfile = (connection: EvolutionConnection, characterId: number) => connection.execute(`INSERT IGNORE INTO player_evolution_profiles
   (character_id,unlocked_level,injection_count,evolution_scale,adaptation_pressure,stability,fixed_bonus_json,lineage_marks_json,final_traits_json)
@@ -511,22 +536,30 @@ const mutationFor = async (connection: PoolConnection, characterId: number, muta
 };
 
 /** 偏差可随时暂停，暂停后不再计入面板与战斗结算；恢复时回到原偏差状态。 */
-export const setMutationPaused = async (qqUserId: string, mutationId: number, paused: boolean) => withTransaction(async connection => {
-  const character = await characterFor(connection, qqUserId, true); const profile = await ensureEvolutionProfile(connection, character, true);
+export const setMutationPausedInTransaction = async (connection: PoolConnection, qqUserId: string, mutationId: number, paused: boolean, preview = false) => {
+  const character = await characterFor(connection, qqUserId, true); await assertAtEvolutionLab(connection, character);
+  const profile = preview ? await profileFor(connection, Number(character.id), true) : await ensureEvolutionProfile(connection, character, true);
   if (!profile) throw new Error('研究室尚未向你开放。');
   const mutation = await mutationFor(connection, Number(character.id), mutationId, true);
   if (paused) {
     if (mutation.mutation_state !== 'deviation') throw new Error('只有偏差型变异可以暂停。');
+  } else if (mutation.mutation_state !== 'paused') throw new Error('这份变异目前无需恢复。');
+  const quote = { mutationId: Number(mutation.id), name: mutation.mutation_name, bodyPart: mutation.body_part,
+    stateBefore: mutation.mutation_state, stateAfter: paused ? 'paused' : 'deviation', paused,
+    effectEnabledBefore: paused, effectEnabledAfter: !paused };
+  if (preview) return { characterId: Number(character.id), ...quote };
+  if (paused) {
     await connection.execute(`UPDATE player_mutations SET mutation_state='paused',updated_at=NOW() WHERE id=?`, [mutation.id]);
   } else {
-    if (mutation.mutation_state !== 'paused') throw new Error('这份变异目前无需恢复。');
     await connection.execute(`UPDATE player_mutations SET mutation_state='deviation',updated_at=NOW() WHERE id=?`, [mutation.id]);
   }
   const kind=paused?'evolution.mutation_paused':'evolution.mutation_resumed';
   const [mutationEvent]=await connection.execute<ResultSetHeader>(`INSERT INTO player_events (player_id,event_type,payload) SELECT player_id,?,? FROM characters WHERE id=?`, [kind, JSON.stringify({ mutationId, code: mutation.mutation_code }), character.id]);
   await recordCharacterOperation(connection,{characterId:Number(character.id),kind,existingEventId:Number(mutationEvent.insertId),source:{system:'player_events',id:Number(mutationEvent.insertId),step:paused?'paused':'resumed'},outcome:paused?'暂停':'恢复',summary:`${paused?'暂停':'恢复'}变异「${mutation.mutation_name}」`,detail:{mutationId,mutationCode:mutation.mutation_code,mutationName:mutation.mutation_name}});
-  return { characterId: Number(character.id), name: mutation.mutation_name, paused };
-});
+  return { characterId: Number(character.id), ...quote };
+};
+export const setMutationPaused = async (qqUserId: string, mutationId: number, paused: boolean) =>
+  withTransaction(connection => setMutationPausedInTransaction(connection, qqUserId, mutationId, paused));
 
 /** 用稳定介质把一个偏差转化为温和的稳定记录；若该部位已有稳定栏，则要求先自行封存其一。 */
 export const stabilizeMutation = async (qqUserId: string, mutationId: number) => withTransaction(async connection => {
@@ -596,7 +629,8 @@ export const toggleShapingTrait = async (qqUserId: string, mutationId: number) =
 });
 
 export const mutationDetail = async (qqUserId: string, mutationId: number) => withTransaction(async connection => {
-  const character = await characterFor(connection, qqUserId, true); const profile = await ensureEvolutionProfile(connection, character, true);
+  const character = await characterFor(connection, qqUserId, true); await assertAtEvolutionLab(connection, character);
+  const profile = await ensureEvolutionProfile(connection, character, true);
   if (!profile) throw new Error('研究室尚未向你开放。');
   return mutationFor(connection, Number(character.id), mutationId, true);
 });

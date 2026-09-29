@@ -2,6 +2,7 @@ import { Format, withEventContext } from 'alemonjs';
 import type { CoreCommandRequest } from './contracts/core-api';
 import { withCoreMessageCapture } from './game/use-game-message';
 import { formatValueToAppMessage } from './app-api/app-format';
+import { enqueueWebNotificationForQqUser, ensureWebNotificationInbox } from './app-api/notification.service';
 import { enqueueNotification } from './core/notification/outbox.service';
 import type { AppCommandArgument, AppCommandRisk } from './app-api/command-catalog';
 
@@ -86,13 +87,13 @@ const coreCategory = (path: string): CoreCommandCatalogEntry['category'] => {
   if (/(背包|道具|异械|图鉴|物品|材料|装备详情)/.test(path)) return 'inventory';
   if (/(队伍|组队|好友|邮件|聊天|交谈|社交|赠礼)/.test(path)) return 'social';
   if (/(任务|成就|足迹|悬赏|委托|奇遇|事件)/.test(path)) return 'quest';
-  if (/(商店|店铺|交易|市场|钱庄|打造|熔铸|重铸|附魔|炼金|分解|构造|购买|出售|卖出|存入|取出)/.test(path)) return 'shop';
+  if (/(商店|店铺|交易|市场|钱庄|打造|熔铸|重铸|附魔|炼金|分解|构造|购买|出售|卖出|求购|撤单|存入|取出)/.test(path)) return 'shop';
   if (/(家园|房间|家具|布置)/.test(path)) return 'home';
   if (/(探索|地图|移动|前往|NPC|域民|建筑|开采|迷宫|天气|附近|感知|坐标|目标)/.test(path)) return 'explore';
   return 'system';
 };
 
-const routeReadOnly = (path: string): boolean => !/(选择|确认|提交|领取|删除|丢弃|使用|穿戴|卸下|创建|加入|退出|购买|出售|卖出|存入|取出|打造|炼制|熔铸|重铸|附魔|分解|构造|兑换|升级|学习|改名|改性|设置|操作|移动|前往|进入|开采|攻击|防御|逃跑|施放|召唤|领取|接取|参与|协作|答题|选择|跳过|注销|生效|解除|配置设置|配置确认|配置取消)/.test(path);
+const routeReadOnly = (path: string): boolean => !/(选择|确认|提交|领取|删除|丢弃|使用|穿戴|卸下|创建|加入|退出|购买|出售|卖出|求购|撤单|存入|取出|定存|兑付|提前支取|打造|炼制|熔铸|重铸|附魔|分解|构造|兑换|升级|学习|改名|改性|设置|操作|移动|前往|进入|开采|攻击|防御|逃跑|施放|召唤|领取|接取|参与|协作|答题|选择|跳过|注销|生效|解除|配置设置|配置确认|配置取消)/.test(path);
 
 const routeRisk = (path: string, readOnly: boolean): AppCommandRisk => {
   if (/(战斗|攻击|防御|逃跑|技能|药剂|召唤|异械施放|异械技能|异械目标)/.test(path)) return 'combat';
@@ -142,7 +143,7 @@ const routeToCatalogEntry = (route: RegisteredRoute): CoreCommandCatalogEntry | 
     readOnly,
     requiresCharacter: routeNeedsCharacter(path),
     risk,
-    ...(!readOnly && /(删除|丢弃|领取|使用|购买|出售|卖出|存入|取出|打造|炼制|熔铸|重铸|附魔|分解|构造|兑换|升级|学习|改名|改性|设置|注销|确认覆盖|恢复)/.test(path) ? { requiresConfirm: true } : {}),
+    ...(!readOnly && /(删除|丢弃|领取|使用|购买|出售|卖出|求购|撤单|存入|取出|定存|兑付|提前支取|打造|炼制|熔铸|重铸|附魔|分解|构造|兑换|升级|学习|改名|改性|设置|注销|确认覆盖|恢复)/.test(path) ? { requiresConfirm: true } : {}),
     refresh: routeRefresh(path, category),
     source: 'core-router'
   };
@@ -207,6 +208,8 @@ const validationFormat = (router: DispatchRouter, result: any) => {
  */
 export const executeCoreGameCommand = async (request: CoreCommandRequest): Promise<CoreRouteExecution> => {
   if (!commandRouter) return { matched: false, result: { reason: 'router_unavailable' }, formats: [] };
+  // 建表在业务命令执行前完成，避免晚到回复在原命令的事务期间触发 DDL。
+  if (request.actor.provider === 'app') await ensureWebNotificationInbox();
   const router = commandRouter;
   const conversation = request.conversation;
   const scope = conversation?.scope === 'group' || conversation?.scope === 'channel' ? conversation.scope : 'private';
@@ -237,10 +240,20 @@ export const executeCoreGameCommand = async (request: CoreCommandRequest): Promi
     formats: [] as unknown[][],
     closed: false,
     late: async (format: unknown[]) => {
-      if (!conversation?.botId) return;
       const message = formatValueToAppMessage(format);
+      const dedupeKey = `core-command:${request.requestId}:late:${++lateSequence}`;
+      if (request.actor.provider === 'app') {
+        await enqueueWebNotificationForQqUser(request.actor.subject, {
+          dedupeKey,
+          category: 'command',
+          title: '指令结果',
+          messages: [message]
+        });
+        return;
+      }
+      if (!conversation?.botId) return;
       await enqueueNotification({
-        dedupeKey: `core-command:${request.requestId}:late:${++lateSequence}`,
+        dedupeKey,
         provider: 'qq', botId: conversation.botId,
         scope: isPrivate ? 'private' : scope, targetId: id, actorId: request.actor.subject,
         messages: [{

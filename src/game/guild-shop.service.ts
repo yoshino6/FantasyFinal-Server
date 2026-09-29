@@ -12,7 +12,7 @@ import { guildMapCatalog, guildMapContributionPrice } from './guild-map.service'
 const PAGE_SIZE = 5;
 type CharacterRow = RowDataPacket & { id: number; guild_contribution: number };
 type ShopRow = RowDataPacket & { id: number; codex_id: string; name: string; item_category: string; description: string; buy_price: number; stock_quantity: number; owned_quantity: number; skill_code: string | null; skill_tier: string | null };
-type SellRow = RowDataPacket & { id: number; name: string; item_category: string; quantity: number; sell_price: number };
+type SellRow = RowDataPacket & { id: number; name: string; item_category: string; quantity: number; sell_price: number; sellable_quantity: number };
 
 const characterFor = async (connection: PoolConnection | Awaited<ReturnType<typeof getPool>>, qqUserId: string, lock = false) => {
   const [rows] = await connection.execute<CharacterRow[]>(`SELECT c.id,c.guild_contribution FROM characters c JOIN players p ON p.id=c.player_id WHERE p.qq_user_id=? LIMIT 1${lock ? ' FOR UPDATE' : ''}`, [qqUserId]);
@@ -67,20 +67,50 @@ export const shopCatalog = async (qqUserId: string, page = 1, keyword = '') => {
   return { items, ...paging, keyword: keyword.trim(), contribution: Number(character.guild_contribution) };
 };
 
+export const shopItemDetail = async (qqUserId: string, itemId: number) => {
+  if (!Number.isSafeInteger(itemId) || itemId < 1) throw new Error('商品编号无效。');
+  const pool = await getPool(); const character = await characterFor(pool, qqUserId);
+  const map = (await purchasableMaps(pool)).find(entry => entry.id === itemId);
+  if (map) {
+    const [owned] = await pool.execute<(RowDataPacket & { quantity: number })[]>(`SELECT COALESCE(SUM(quantity),0) AS quantity FROM (
+      SELECT quantity FROM player_inventory WHERE character_id=? AND item_id=?
+      UNION ALL SELECT s.quantity FROM player_home_storage_items s JOIN player_homes h ON h.id=s.home_id WHERE h.character_id=? AND s.item_id=?
+      ) owned`, [character.id, itemId, character.id, itemId]);
+    return { item: { id: map.id, codexId: map.codexId, name: map.name, category: '地图', description: map.description,
+      price: map.price, stockQuantity: null, ownedQuantity: Number(owned[0]?.quantity ?? 0), personalBound: true },
+      contribution: Number(character.guild_contribution) };
+  }
+  const [rows] = await pool.execute<(ShopRow & { item_type: string; trade_price: number; rarity: string })[]>(`SELECT i.id,i.codex_id,i.name,i.item_type,i.trade_price,i.rarity,i.item_category,i.description,si.buy_price,si.stock_quantity,
+    COALESCE(pi.quantity,0) AS owned_quantity,JSON_UNQUOTE(JSON_EXTRACT(i.effect_json,'$.skillBook')) AS skill_code,s.tier AS skill_tier
+    FROM guild_shop_items si JOIN item_definitions i ON i.id=si.item_id
+    LEFT JOIN player_inventory pi ON pi.item_id=i.id AND pi.character_id=?
+    LEFT JOIN skill_definitions s ON s.code=JSON_UNQUOTE(JSON_EXTRACT(i.effect_json,'$.skillBook'))
+    WHERE si.item_id=? AND si.is_active=1 AND si.buy_price>0 AND i.item_category<>'地图' LIMIT 1`, [character.id, itemId]);
+  const item = rows[0]; if (!item) throw new Error('该商品已下架。');
+  const bookPrice = skillBookPrice(item);
+  const quote = await openingShopQuote(pool, Number(character.id), item, 1);
+  return { item: { id: Number(item.id), codexId: item.codex_id, name: item.name, category: item.item_category,
+    description: item.description, price: bookPrice ?? Math.ceil(quote.price / 10), stockQuantity: Number(item.stock_quantity),
+    ownedQuantity: Number(item.owned_quantity), personalBound: item.item_category === '技能书' || quote.credit > 0 || quote.discount > 0 },
+    contribution: Number(character.guild_contribution) };
+};
+
 export const sellCatalog = async (qqUserId: string, page = 1, keyword = '') => {
   const pool = await getPool(); const character = await characterFor(pool, qqUserId);
   const term = `%${keyword.trim()}%`;
-  const sellable = "pi.character_id=? AND pi.quantity>0 AND i.is_tradeable=1 AND i.trade_price>=10 AND i.item_category NOT IN ('特殊','地图','货币') AND i.item_type IN ('material','consumable') AND (CASE WHEN i.code IN ('meteor_iron','star_copper','moon_silver','sun_gold') THEN FLOOR(i.trade_price*.5) ELSE i.trade_price END)>=10 AND i.name LIKE ?";
+  const sellable = "pi.character_id=? AND pi.quantity>COALESCE(pi.personal_bound_quantity,0) AND i.is_tradeable=1 AND i.trade_price>=10 AND i.item_category NOT IN ('特殊','地图','货币') AND i.item_type IN ('material','consumable') AND (CASE WHEN i.code IN ('meteor_iron','star_copper','moon_silver','sun_gold') THEN FLOOR(i.trade_price*.5) ELSE i.trade_price END)>=10 AND i.name LIKE ? AND NOT EXISTS (SELECT 1 FROM pvp_stolen_loot loot WHERE loot.holder_character_id=pi.character_id AND loot.item_id=pi.item_id AND loot.returned_at IS NULL AND loot.held_quantity>0)";
   const [countRows] = await pool.execute<(RowDataPacket & { total: number })[]>('SELECT COUNT(*) AS total FROM player_inventory pi JOIN item_definitions i ON i.id=pi.item_id WHERE ' + sellable, [character.id, term]);
   const paging = pageInfo(page, Number(countRows[0]?.total ?? 0));
-  const [rows] = await pool.execute<SellRow[]>(`SELECT i.id,i.name,i.item_category,pi.quantity,
+  const [rows] = await pool.execute<SellRow[]>(`SELECT i.id,i.name,i.item_category,pi.quantity,pi.quantity-COALESCE(pi.personal_bound_quantity,0) AS sellable_quantity,
     CASE WHEN i.code IN ('meteor_iron','star_copper','moon_silver','sun_gold') THEN FLOOR(i.trade_price*.5) ELSE i.trade_price END AS sell_price
     FROM player_inventory pi JOIN item_definitions i ON i.id=pi.item_id
     WHERE ${sellable} ORDER BY i.item_type,i.name LIMIT ? OFFSET ?`, [character.id, term, String(PAGE_SIZE), String((paging.page - 1) * PAGE_SIZE)]);
-  return { items: rows.map(row => ({ id: Number(row.id), name: row.name, category: row.item_category, quantity: Number(row.quantity), price: guildContributionSalePrice(Number(row.sell_price)) })), ...paging, keyword: keyword.trim(), contribution: Number(character.guild_contribution) };
+  return { items: rows.map(row => ({ id: Number(row.id), name: row.name, category: row.item_category, quantity: Number(row.quantity),
+    sellableQuantity: Number(row.sellable_quantity), price: guildContributionSalePrice(Number(row.sell_price)) })),
+    ...paging, keyword: keyword.trim(), contribution: Number(character.guild_contribution) };
 };
 
-export const buyShopItem = async (qqUserId: string, itemId: number, quantity = 1) => withTransaction(async connection => {
+export const buyShopItemInTransaction = async (connection: PoolConnection, qqUserId: string, itemId: number, quantity = 1, preview = false) => {
   const amount = validQuantity(quantity);
   const character = await characterFor(connection, qqUserId, true);
   const [categories]=await connection.execute<(RowDataPacket & {item_category:string})[]>('SELECT item_category FROM item_definitions WHERE id=?',[itemId]);
@@ -91,13 +121,17 @@ export const buyShopItem = async (qqUserId: string, itemId: number, quantity = 1
     const[owned]=await connection.execute<RowDataPacket[]>(`SELECT 1 FROM player_inventory WHERE character_id=? AND item_id=? AND quantity>0 UNION ALL SELECT 1 FROM player_home_storage_items s JOIN player_homes h ON h.id=s.home_id WHERE h.character_id=? AND s.item_id=? AND s.quantity>0`,[character.id,itemId,character.id,itemId]);
     if(owned.length)throw new Error('你已经拥有这张地图。');
     if(Number(character.guild_contribution)<map.price)throw new Error(`贡献度不足，需要 ${map.price} 点。`);
+    const quote = { itemId, name: map.name, category: '地图', quantity: 1, price: map.price,
+      contributionBefore: Number(character.guild_contribution), contributionAfter: Number(character.guild_contribution) - map.price,
+      stockBefore: null, stockAfter: null, personalBound: true, discountCredit: 0, talentDiscount: 0 };
+    if (preview) return quote;
     const[spent]=await connection.execute<ResultSetHeader>('UPDATE characters SET guild_contribution=guild_contribution-? WHERE id=? AND guild_contribution>=?',[map.price,character.id,map.price]);
     if(!spent.affectedRows)throw new Error('贡献度已变化，请重新查看商店。');
     await grantInventory(connection,Number(character.id),itemId,{personal:1,trade:0,unbound:0});
     await connection.execute('INSERT IGNORE INTO player_item_codex (character_id,item_id) VALUES (?,?)',[character.id,itemId]);
     await achievementItem(connection,Number(character.id),itemId);
     await recordCharacterOperation(connection, { characterId:Number(character.id),kind:'guild_shop.bought',source:{system:'guild_shop_purchase',id:randomUUID(),step:'settled'},outcome:'购入',summary:`在公会商店兑换${map.name}`,detail:{itemId,itemName:map.name,quantity:1,paidContribution:map.price} });
-    return{name:map.name,quantity:1,price:map.price};
+    return quote;
   }
   const [rows] = await connection.execute<(ShopRow & { item_type: string;trade_price:number;rarity:string })[]>("SELECT i.id,i.name,i.item_type,i.item_category,i.description,i.trade_price,i.rarity,JSON_UNQUOTE(JSON_EXTRACT(i.effect_json,'$.skillBook')) AS skill_code,s.tier AS skill_tier,si.buy_price,si.stock_quantity FROM guild_shop_items si JOIN item_definitions i ON i.id=si.item_id LEFT JOIN skill_definitions s ON s.code=JSON_UNQUOTE(JSON_EXTRACT(i.effect_json,'$.skillBook')) WHERE si.item_id=? AND si.is_active=1 AND si.buy_price>0 AND i.item_category<>'地图' FOR UPDATE", [itemId]);
   const item = rows[0]; if (!item) throw new Error('该商品已下架。');
@@ -112,6 +146,12 @@ export const buyShopItem = async (qqUserId: string, itemId: number, quantity = 1
   const quote=await openingShopQuote(connection,Number(character.id),item,amount);
   const totalPrice=bookPrice??Math.ceil(quote.price/10);
   if (Number(character.guild_contribution) < totalPrice) throw new Error(`贡献度不足，需要 ${totalPrice} 点。`);
+  const personal = item.item_category==='技能书'||quote.credit>0||quote.discount>0;
+  const priceQuote = { itemId, name: item.name, category: item.item_category, quantity: amount, price: totalPrice,
+    contributionBefore: Number(character.guild_contribution), contributionAfter: Number(character.guild_contribution) - totalPrice,
+    stockBefore: Number(item.stock_quantity), stockAfter: Number(item.stock_quantity) - amount, personalBound: personal,
+    discountCredit: Number(quote.credit), talentDiscount: Number(quote.discount) };
+  if (preview) return priceQuote;
   if (totalPrice > 0) {
     const [spent] = await connection.execute<ResultSetHeader>('UPDATE characters SET guild_contribution=guild_contribution-? WHERE id=? AND guild_contribution>=?', [totalPrice, character.id, totalPrice]);
     if (!spent.affectedRows) throw new Error('贡献度已变化，请重新查看商店。');
@@ -119,15 +159,16 @@ export const buyShopItem = async (qqUserId: string, itemId: number, quantity = 1
   await payOpeningShopDiscount(connection,Number(character.id),quote);
   const [stock] = await connection.execute<ResultSetHeader>('UPDATE guild_shop_items SET stock_quantity=stock_quantity-? WHERE item_id=? AND stock_quantity>=?', [amount, item.id, amount]);
   if (!stock.affectedRows) throw new Error('库存已变化，请重新查看商店。');
-  const personal = item.item_category==='技能书'||quote.credit>0||quote.discount>0;
   await grantInventory(connection,Number(character.id),Number(item.id),{trade:personal?0:amount,personal:personal?amount:0,unbound:0});
   await connection.execute('INSERT IGNORE INTO player_item_codex (character_id,item_id) VALUES (?,?)', [character.id, item.id]);
   await achievementItem(connection,Number(character.id),Number(item.id));
   await recordCharacterOperation(connection, { characterId:Number(character.id),kind:'guild_shop.bought',source:{system:'guild_shop_purchase',id:randomUUID(),step:'settled'},outcome:'购入',summary:`在公会商店兑换${item.name} ×${amount}`,detail:{itemId, itemName:item.name,quantity:amount,paidContribution:totalPrice} });
-  return { name: item.name, quantity: amount, price: totalPrice };
-});
+  return priceQuote;
+};
+export const buyShopItem = (qqUserId: string, itemId: number, quantity = 1) =>
+  withTransaction(connection => buyShopItemInTransaction(connection, qqUserId, itemId, quantity));
 
-export const sellShopItem = async (qqUserId: string, itemId: number, quantity = 1) => withTransaction(async connection => {
+export const sellShopItemInTransaction = async (connection: PoolConnection, qqUserId: string, itemId: number, quantity = 1, preview = false) => {
   const amount = validQuantity(quantity);
   const character = await characterFor(connection, qqUserId, true);
   const [rows] = await connection.execute<(SellRow & { item_type: string; personal_bound_quantity:number; trade_bound_quantity:number })[]>(`SELECT i.id,i.name,i.item_type,i.item_category,pi.quantity,pi.personal_bound_quantity,pi.trade_bound_quantity,
@@ -143,9 +184,18 @@ export const sellShopItem = async (qqUserId: string, itemId: number, quantity = 
   const unitPrice = guildContributionSalePrice(Number(item.sell_price));
   if (unitPrice < 1) throw new Error('该物品价值不足，不能兑换贡献度。');
   const totalPrice = unitPrice * amount;
+  const priceQuote = { itemId, name: item.name, category: item.item_category, quantity: amount,
+    unitPrice, price: totalPrice, contributionBefore: Number(character.guild_contribution),
+    contributionAfter: Number(character.guild_contribution) + totalPrice,
+    ownedBefore: Number(item.quantity), ownedAfter: Number(item.quantity) - amount,
+    sellableBefore: Number(item.quantity) - Number(item.personal_bound_quantity),
+    sellableAfter: Number(item.quantity) - Number(item.personal_bound_quantity) - amount };
+  if (preview) return priceQuote;
   await connection.execute('UPDATE player_inventory SET quantity=quantity-?,trade_bound_quantity=trade_bound_quantity-?,binding_revision=binding_revision+1 WHERE character_id=? AND item_id=?', [amount,Math.min(amount,Number(item.trade_bound_quantity)), character.id, item.id]);
   await connection.execute('DELETE FROM player_inventory WHERE character_id=? AND item_id=? AND quantity<=0', [character.id, item.id]);
   await connection.execute('UPDATE characters SET guild_contribution=guild_contribution+? WHERE id=?', [totalPrice, character.id]);
   await recordCharacterOperation(connection, { characterId:Number(character.id),kind:'guild_shop.sold',source:{system:'guild_shop_sale',id:randomUUID(),step:'settled'},outcome:'售出',summary:`向公会商店交付${item.name} ×${amount}`,detail:{itemId,itemName:item.name,quantity:amount,receivedContribution:totalPrice} });
-  return { name: item.name, quantity: amount, price: totalPrice };
-});
+  return priceQuote;
+};
+export const sellShopItem = (qqUserId: string, itemId: number, quantity = 1) =>
+  withTransaction(connection => sellShopItemInTransaction(connection, qqUserId, itemId, quantity));

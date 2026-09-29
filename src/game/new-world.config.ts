@@ -1,5 +1,5 @@
 import { forgedPrimaryStats } from './constants';
-import { advancedProfessionByCode } from './advanced-profession.config';
+import { advancedProfessionByCode, mapHiddenAdvancedProfessionByCode } from './advanced-profession.config';
 
 export const newWorldLevels = [1, 10, 20, 30] as const;
 export type NewWorldLevel = (typeof newWorldLevels)[number];
@@ -23,7 +23,7 @@ const professionWeapons: Record<string, readonly string[]> = {
   warrior: ['longsword', 'shield'], rogue: ['dagger', 'fistblade'], mage: ['staff', 'spellbook'], priest: ['spellbook', 'orb']
 };
 export const newWorldWeaponProfile = (base: string | null, advanced?: string | null) => {
-  const family = advancedProfessionByCode(advanced ?? '')?.baseProfession;
+  const family = (advancedProfessionByCode(advanced ?? '') ?? mapHiddenAdvancedProfessionByCode(advanced ?? ''))?.baseProfession;
   const code = family ? ({ 战士: 'warrior', 盗贼: 'rogue', 法师: 'mage', 牧师: 'priest' }[family]) : base;
   return professionWeapons[code ?? ''];
 };

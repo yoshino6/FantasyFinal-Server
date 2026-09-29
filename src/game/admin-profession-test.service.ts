@@ -1,8 +1,7 @@
 import type { PoolConnection, RowDataPacket } from 'mysql2/promise';
 import { withTransaction } from '../database/pool';
-import { activeSkillCodesForAdvancedProfession, advancedInheritanceSkillCode, worldTreeAdvancedProfessions } from './advanced-profession.config';
+import { activeSkillCodesForAdvancedProfession, advancedInheritanceSkillCode, mapHiddenAdvancedProfessions, worldTreeAdvancedProfessions } from './advanced-profession.config';
 import { hiddenProfessions, hiddenPassiveCode, hiddenSkills } from './hidden-profession.config';
-import { spiritSummonerActiveSkillCodes } from './spirit-summoner.config';
 import { revokeAdvancedProfessionSkills } from './advanced-profession.service';
 import { resetSkillPointAllocation } from './skill-point-ledger.service';
 import { recalculateCharacterStats } from './character.service';
@@ -16,6 +15,7 @@ import { answerTestHeartQuestions } from './heart-question.service';
 
 export const professionTestOptions = [
   ...worldTreeAdvancedProfessions.map(p=>({code:p.code,name:p.name,group:p.baseProfession,role:p.role})),
+  ...mapHiddenAdvancedProfessions.map(p=>({code:p.code,name:p.name,group:'地图隐藏二转',role:p.role})),
   ...hiddenProfessions.map(p=>({code:p.code,name:p.name,group:'店铺二转',role:p.role}))
 ];
 const object = (value: unknown): Record<string,unknown> => {
@@ -32,10 +32,10 @@ const equipmentProfiles: Record<string,{set:string;weapons:string[]}> = {
   priest:{set:'mistmother_cocoon',weapons:['epic_threehead_grimoire','epic_marshmoon_orb']}
 };
 const advancedArmorProfiles: Record<string,string> = {
-  bulwark_guard:'mountainheart_regalia',aegis_priest:'mountainheart_regalia',
-  war_lord:'valk_forge_regalia',ironbreaker:'valk_forge_regalia',spellblade:'valk_forge_regalia',weapon_master:'valk_forge_regalia',
-  nightblade:'goblin_court_hunt',venomancer:'goblin_court_hunt',trickster_ranger:'goblin_court_hunt',inventor:'goblin_court_hunt',
-  elementalist:'mistmother_cocoon',spirit_summoner:'mistmother_cocoon',saint_healer:'mistmother_cocoon',dawn_inquisitor:'mistmother_cocoon',magical_scholar:'mistmother_cocoon',tactician:'mistmother_cocoon'
+  bulwark_guard:'mountainheart_regalia',aegis_priest:'mountainheart_regalia',titan:'mountainheart_regalia',holy_knight:'mountainheart_regalia',
+  war_lord:'valk_forge_regalia',ironbreaker:'valk_forge_regalia',spellblade:'valk_forge_regalia',sword_shadow:'valk_forge_regalia',weapon_master:'valk_forge_regalia',
+  nightblade:'goblin_court_hunt',venomancer:'goblin_court_hunt',trickster_ranger:'goblin_court_hunt',master_thief:'goblin_court_hunt',inventor:'goblin_court_hunt',
+  elementalist:'mistmother_cocoon',arcane_magister:'mistmother_cocoon',spirit_summoner:'mistmother_cocoon',saint_healer:'mistmother_cocoon',dawn_inquisitor:'mistmother_cocoon',stringblade:'goblin_court_hunt',magical_scholar:'mistmother_cocoon',tactician:'mistmother_cocoon'
 };
 export const professionTestArmorSetFor = (advancedCode: string, base: string) => advancedArmorProfiles[advancedCode]??(equipmentProfiles[base]??equipmentProfiles.warrior!).set;
 const ensureFirstProfession = async (connection: PoolConnection, characterId: number, preferred: string) => {
@@ -76,15 +76,15 @@ const hasEpicTestSet = async (connection: PoolConnection, characterId: number, b
 /** 仅供已鉴权的管理测试入口调用。任务、技能、面板与审计由调用者放在同一事务。 */
 const applyTestProfession = async (connection: PoolConnection, characterId: number, user: string, code: string) => {
   const option=professionTestOptions.find(p=>p.code===code||p.name===code);if(!option)throw new Error('请选择有效的二转职业。');
-  const normal=worldTreeAdvancedProfessions.find(p=>p.code===option.code),hidden=hiddenProfessions.find(p=>p.code===option.code);
+  const normal=worldTreeAdvancedProfessions.find(p=>p.code===option.code),mapHidden=mapHiddenAdvancedProfessions.find(p=>p.code===option.code),hidden=hiddenProfessions.find(p=>p.code===option.code);
   const [characters]=await connection.execute<RowDataPacket[]>('SELECT id,name,level,skill_points,profession_code FROM characters WHERE id=? AND npc_code IS NULL AND npc_id IS NULL FOR UPDATE',[characterId]);
   const character=characters[0];if(!character)throw new Error('未找到玩家角色。');
   await assertCombatLoadoutMutable(connection,characterId);
-  const base=await ensureFirstProfession(connection,characterId,baseCodes[normal?.baseProfession??'']??(option.code==='magical_scholar'?'mage':option.code==='tactician'?'priest':'warrior'));
+  const base=await ensureFirstProfession(connection,characterId,baseCodes[normal?.baseProfession??mapHidden?.baseProfession??'']??(option.code==='magical_scholar'?'mage':option.code==='tactician'?'priest':'warrior'));
   const growth=await simulateEvolutionToLevel30(connection,user);
   const [current]=await connection.execute<RowDataPacket[]>('SELECT profession_code FROM player_advanced_professions WHERE character_id=? FOR UPDATE',[characterId]);
-  const passive=normal?.passive.code??hiddenPassiveCode(hidden!.code);
-  const required=[...new Set([passive,advancedInheritanceSkillCode(option.code),...(normal?activeSkillCodesForAdvancedProfession(normal.code):hiddenSkills.filter(s=>s.profession===hidden!.code).map(s=>s.code)),...(option.code==='spirit_summoner'?spiritSummonerActiveSkillCodes:[])])];
+  const passive=normal?.passive.code??mapHidden?.passive.code??hiddenPassiveCode(hidden!.code);
+  const required=[...new Set([passive,advancedInheritanceSkillCode(option.code),...(normal||mapHidden?activeSkillCodesForAdvancedProfession(option.code):hiddenSkills.filter(s=>s.profession===hidden!.code).map(s=>s.code))])];
   const [skills]=await connection.execute<RowDataPacket[]>(`SELECT id,code FROM skill_definitions WHERE code IN (${required.map(()=>'?').join(',')})`,required);
   if(skills.length!==required.length)throw new Error('该职业的技能资料尚未完整载入，请先完成游戏数据初始化。');
   // 世界树只能有一条进行中试炼；结束旧试炼入口，保留历史已完成记录和其他店铺支线。
@@ -92,6 +92,12 @@ const applyTestProfession = async (connection: PoolConnection, characterId: numb
   if(normal) {
     await connection.execute(`INSERT INTO player_advanced_profession_quests (character_id,profession_code,stage,story_kills,proof_kills,completed_at) VALUES (?,?,4,?,?,NOW())
       ON DUPLICATE KEY UPDATE stage=4,story_kills=VALUES(story_kills),proof_kills=VALUES(proof_kills),completed_at=COALESCE(completed_at,VALUES(completed_at))`,[characterId,normal.code,normal.first.requiredKills,normal.second.requiredKills]);
+  } else if (mapHidden) {
+    await connection.execute(`INSERT INTO player_map_hidden_advanced_quests
+      (character_id,profession_code,stage,revision,observed_kills,proof_kills,completed_at)
+      VALUES (?,?,7,1,0,0,NOW())
+      ON DUPLICATE KEY UPDATE stage=7,revision=revision+1,completed_at=COALESCE(completed_at,VALUES(completed_at))`, [characterId, mapHidden.code]);
+    await connection.execute(`INSERT IGNORE INTO player_map_hidden_advanced_qualifications (character_id,profession_code) VALUES (?,?)`, [characterId, mapHidden.code]);
   } else {
     const [quests]=await connection.execute<RowDataPacket[]>('SELECT completed_json FROM player_hidden_profession_quests WHERE character_id=? AND profession_code=? FOR UPDATE',[characterId,option.code]);
     const completed=object(quests[0]?.completed_json);
@@ -105,13 +111,13 @@ const applyTestProfession = async (connection: PoolConnection, characterId: numb
     const reset=await resetSkillPointAllocation(connection,characterId);restoredPoints=reset.restoredPoints;
     await revokeAdvancedProfessionSkills(connection,characterId);
     await connection.execute(`INSERT INTO player_advanced_professions (character_id,profession_code,mentor_code,completed_at) VALUES (?,?,?,NOW())
-      ON DUPLICATE KEY UPDATE profession_code=VALUES(profession_code),mentor_code=VALUES(mentor_code),completed_at=VALUES(completed_at)`,[characterId,option.code,normal?.mentor.code??hidden!.npc]);
+      ON DUPLICATE KEY UPDATE profession_code=VALUES(profession_code),mentor_code=VALUES(mentor_code),completed_at=VALUES(completed_at)`,[characterId,option.code,normal?.mentor.code??mapHidden?.mentor.code??hidden!.npc]);
   }
   // 同职业重复点击只补齐缺失技能和任务，不反复洗点或发放任务物资。
   for(const skill of skills)await connection.execute('INSERT IGNORE INTO player_skills (character_id,skill_id,level,passive_linked) VALUES (?,?,1,0)',[characterId,skill.id]);
   await connection.execute('DELETE FROM player_hidden_action_drafts WHERE character_id=?',[characterId]);
   const answeredHeartQuestions=await answerTestHeartQuestions(connection,characterId);
-  const equipmentBase=normal?baseCodes[normal.baseProfession]??base:base;
+  const equipmentBase=normal||mapHidden?baseCodes[(normal??mapHidden)!.baseProfession]??base:base;
   const equipment=changed||!await hasEpicTestSet(connection,characterId,equipmentBase,option.code)?await equipEpicTestSet(connection,characterId,equipmentBase,option.code):[];
   if(option.code==='weapon_master') {
     const [main]=await connection.execute<RowDataPacket[]>("SELECT e.instance_id FROM player_equipment e JOIN player_item_instances ii ON ii.id=e.instance_id AND ii.character_id=e.character_id JOIN item_definitions i ON i.id=ii.item_id WHERE e.character_id=? AND e.slot='weapon' AND i.item_category='武器' AND i.required_level<=30 AND ii.market_listing_id IS NULL LIMIT 1",[characterId]);

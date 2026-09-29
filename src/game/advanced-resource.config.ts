@@ -1,5 +1,5 @@
 /**
- * 二转专属资源只存在于一场 PvE 战斗内：100 点封顶、战斗结束清空。
+ * 二转专属资源只存在于一场 PvE 战斗内：默认 100 点封顶，职业可指定更低上限；战斗结束清空。
  * 配置和具体结算分离，战斗服务据此校验消耗、渲染面板和输出统一日志。
  */
 export type AdvancedResourceDefinition = {
@@ -7,6 +7,7 @@ export type AdvancedResourceDefinition = {
   code: string;
   name: string;
   summary: string;
+  maxValue?: number;
 };
 
 export type AdvancedSkillResourceRequirement = {
@@ -25,7 +26,12 @@ export const advancedResourceDefinitions: Record<string, AdvancedResourceDefinit
   war_lord: { professionCode: 'war_lord', code: 'battle_fervor', name: '战意', summary: '命中敌人与压制受控目标会积攒；用于战旗与横扫。' },
   ironbreaker: { professionCode: 'ironbreaker', code: 'sunder_momentum', name: '裂势', summary: '暴击与命中破甲、易伤目标会积攒；用于处决。' },
   elementalist: { professionCode: 'elementalist', code: 'arcana', name: '奥能', summary: '施加异种元素印记、命中元素弱点会积攒；用于元素爆发。' },
+  arcane_magister: { professionCode: 'arcane_magister', code: 'arcane_load', name: '奥术负荷', summary: '中高位奥术成功施放时按一次行动积攒；用于星陨秘典。' },
   spirit_summoner: { professionCode: 'spirit_summoner', code: 'spirit_pact', name: '灵契', summary: '灵兽回应，以及队友受到治疗或壁垒时积攒；用于灵契超载。' },
+  sword_shadow: { professionCode: 'sword_shadow', code: 'shadow_momentum', name: '影势', summary: '主攻击实际命中时按一次行动积攒；用于持鞘与剑刃风暴，连击复制不再积攒。' },
+  master_thief: { professionCode: 'master_thief', code: 'handfeel', name: '手感', summary: '验货、合法偷取、背后命中或闪避时有限积攒；用于满载而归。' },
+  holy_knight: { professionCode: 'holy_knight', code: 'vow', name: '誓约', summary: '守护队友与成功维持姿态时积攒；用于换誓与圣域誓约。' },
+  stringblade: { professionCode: 'stringblade', code: 'edge_line', name: '锋线', maxValue: 4, summary: '远近攻击实际交替时积攒一层，上限四层；用于弦锋交错。' },
   spellblade: { professionCode: 'spellblade', code: 'spell_edge', name: '法刃', summary: '物理技能以物攻+魔攻×35%为攻击基础，且不超过实际魔攻；交替使用魔法与物理技会积攒，用于破法回旋与决斗。' },
   nightblade: { professionCode: 'nightblade', code: 'opening', name: '破绽', summary: '暴击或攻击受控、易伤、破甲目标会积攒；用于割喉与终章。' },
   venomancer: { professionCode: 'venomancer', code: 'toxicity', name: '毒性', summary: '持续伤害结算、对中毒目标施加新状态会积攒；用于毒血引爆。' },
@@ -46,6 +52,14 @@ export const advancedSkillResourceRequirements: Record<string, AdvancedSkillReso
   ironbreaker_steel_flash: { professionCode: 'ironbreaker', amount: 100 },
   elementalist_fourfold_resonance: { professionCode: 'elementalist', amount: 50 },
   elementalist_sky_sequence: { professionCode: 'elementalist', amount: 100 },
+  arcane_meteor: { professionCode: 'arcane_magister', amount: 100 },
+  sword_shadow_sheathe: { professionCode: 'sword_shadow', amount: 20 },
+  sword_shadow_storm: { professionCode: 'sword_shadow', amount: 80 },
+  thief_loaded: { professionCode: 'master_thief', amount: 60 },
+  paladin_switch_vow: { professionCode: 'holy_knight', amount: 20 },
+  paladin_sanctuary: { professionCode: 'holy_knight', amount: 100 },
+  stringblade_cross: { professionCode: 'stringblade', amount: 3 },
+  summoner_triad: { professionCode: 'spirit_summoner', amount: 100 },
   summoner_returning_veil: { professionCode: 'spirit_summoner', amount: 50 },
   summoner_star_pact: { professionCode: 'spirit_summoner', amount: 100 },
   spellblade_spellbreak_whirl: { professionCode: 'spellblade', amount: 50 },
@@ -78,6 +92,34 @@ export const advancedSkillTargetRequirements: Record<string, AdvancedSkillTarget
 
 /** 二转主动技的面板正文。通用效果仍由 skill_effects 渲染，这里补足资源、连段和条件效果。 */
 export const advancedSkillDescriptions: Record<string, string> = {
+  sword_shadow_polish: '消耗一次行动，3回合内可连击攻击的直接技能威力+15%，忽略对应防御15%；两者独立计算，不叠加预存。',
+  sword_shadow_sheathe: '消耗20影势与一次行动，下一次可连击攻击额外复制1次；同名标记不可叠加。',
+  sword_shadow_chase: '115%单体斩击；命中后获得连影与影势，并按最终速度、最终命中和连影层数判定连击。',
+  sword_shadow_storm: '消耗80影势，对全体造成95%斩击；每次施放最多复制一次攻击，复制不递归。',
+  titan_anchor: '2回合提高仇恨与控制稳定性；不增加双防，不消除伤势。',
+  titan_defer: '下一跳伤势结算降低15%，不超过最大生命8%；未偿余量顺延，伤势队列不清空。',
+  titan_quake: '110%物理伤害并建立仇恨。',
+  titan_unbroken: '短时维持仇恨、有限代承并限制一次伤势结算峰值；未偿伤势仍需结算。',
+  arcane_precast: '下一次奥术主技能威力提高12%，该技能MP消耗增加20%；不提高奥术负荷获取。',
+  arcane_bolt_high: '145%单体能量魔法伤害；不触发四系元素反应。',
+  arcane_pierce: '185%单体能量魔法伤害，并有限忽略目标魔法防御；不是真伤。',
+  arcane_meteor: '消耗100奥术负荷，235%单体能量魔法伤害，受高MP和长冷却限制。',
+  summoner_reassign: '调整一只现存灵体的攻、守、疗职责并强化下次职责行动；不立即增加灵体行动。',
+  summoner_call: '从五种灵体中选择一只占据空灵位；召唤成本随已占灵位增加。',
+  summoner_command: '指定一只现存灵体执行一次职责行动，受每回合灵体行动预算限制。',
+  summoner_triad: '消耗100灵契，至少两只不同职责灵体在场时各回应一次；不递归触发资源与额外行动。',
+  thief_appraise: '读取当前目标合法可偷池与警觉；下一次探囊免除未知目标惩罚。',
+  thief_pickpocket: '只从普通怪物一次性白名单战利品池偷取；成功与最终掉落共用账本。',
+  thief_exploit: '105%物理伤害；背后命中或闪避可创造下一次探囊窗口和短时命中收益。',
+  thief_loaded: '消耗60手感及本场合法赃物，转为中等伤害或短时战斗增益；不额外生成掉落。',
+  paladin_rally: '根据勇誓或守誓提供全队小额增益；守誓可标记一名队友准备有限代承。',
+  paladin_switch_vow: '消耗20誓约切换勇誓和守誓，清理旧姿态临时强化。',
+  paladin_charge: '120%物理伤害并建立仇恨；守誓标记存在时准备一次有限单体代承。',
+  paladin_sanctuary: '消耗100誓约，短时提升全队攻防并附带一次有限守护；同名增益取高值。',
+  stringblade_draw: '准备下一次远近交替强化；占用一次行动，不直接造成伤害。',
+  stringblade_shot: '135%远程物理伤害，作为交替的远程起手。',
+  stringblade_slash: '125%近战物理伤害；接在有效远射后获得有限强化。',
+  stringblade_cross: '消耗3层锋线，210%单体物理伤害；已完成交替可追加一次非递归伤害。',
   bulwark_shieldwall_advance: '115%物理伤害；令目标嘲讽2回合，自身获得12%减伤并获得20守势。被嘲讽的敌人会优先攻击盾卫。',
   bulwark_vicarious_guard: '为生命比例最低的队友施加2回合守护：其首次受到的单体伤害有35%转移给你；自身同时获得2回合20%伤害减免。按转移前伤害获得守势，单次最多30。',
   bulwark_immovable_mountain: '自身获得2回合35%减伤与20%控制抗性。本回合承受3次攻击后，下一次行动前以90%物理系数反击一次。',

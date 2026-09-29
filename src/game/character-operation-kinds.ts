@@ -96,6 +96,7 @@ export const characterOperationKinds: Record<string, OperationKindRule> = {
   'home.furniture_removed': rule('拆除家具', '生活', 0, { strength: 1, perception: 1 }),
   'home.offer_traded': rule('在家园兑换物品', '交易', 0, { intelligence: 1, perception: 1 }),
   'home.storage_deposited': rule('存入家园仓储', '生活', 0, { intelligence: 1, perception: 1 }),
+  'home.storage_withdrawn': rule('取出家园仓储', '生活', 0, { intelligence: 1, perception: 1 }),
   'equipment.equipped': rule('穿戴装备', '生活', 0, { strength: 1, intelligence: 1 }),
   'equipment.unequipped': rule('卸下装备', '生活', 0, { intelligence: 1, perception: 1 }),
   'character.rest_started': rule('开始休息', '生活', 0, { constitution: 1, spirit: 1 }),

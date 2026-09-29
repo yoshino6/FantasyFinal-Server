@@ -31,6 +31,8 @@ import { additivePercentFactor, ruleStatusSummary, maskRuleBattleLog, readRuleSt
 import { residentSkillByCode } from './resident-skill.config';
 import { activeDeviceSkillByCode, combatDeviceSlotsFor, initializeCombatDeviceEnergy, restoreCombatDeviceEnergy, type ActiveDeviceSkill } from './device.service';
 import { isAdvancedProfessionSkillCode } from './advanced-profession.config';
+import { newAdvancedSkillDefinitions } from './map-hidden-advanced-skills.config';
+import { legacySpiritSummonerSkillCodes } from './spirit-summoner.config';
 import { cardElementDamageMultiplier, cardIncomingDamageMultiplier, equippedEnchantmentEffects } from './equipment-enchantment-effects';
 import { resolveDirectAttackElement } from './combat-element';
 import { resetCardMovementCharge } from './monster-card-exploration.service';
@@ -51,6 +53,8 @@ type PvpBattleRow = RowDataPacket & { id: string; attacker_character_id: number;
 export type PvpAmbushDelivery = { scope: 'group' | 'c2c'; targetId: string; botId?: string };
 
 const random = <T>(items: T[]) => items[Math.floor(Math.random() * items.length)];
+/** 新二转机制尚无对等 PvP 状态机；在所有选技入口统一退回普攻或拒绝手动提交。 */
+const unavailablePvpSkillCodes = new Set([...newAdvancedSkillDefinitions.map(skill => skill.code), ...legacySpiritSummonerSkillCodes]);
 const heartPerception = new WeakMap<object, number>();
 const perceptionRange = (character: PvpCharacter) => {
   const perception = Number(character.perception) + Number(character.perception_growth) * playerGrowthShares(Number(character.level)) + (heartPerception.get(character) ?? 0);
@@ -207,14 +211,15 @@ const actionFor = async (connection: PoolConnection, character: PvpCharacter, ma
       const picked = actions[(Math.max(1, Number(setting.action_cursor)) - 1) % actions.length];
       await connection.execute('UPDATE player_pvp_auto_battle_settings SET action_cursor=action_cursor+1 WHERE character_id=?', [character.id]);
       // 每个保存的栏位都占用一次轮转；技能失效时只让这个栏位临时普攻，不能跳过、压缩或改写配置。
-      if (picked.skill_id === null || picked.active_skill_id === null || !picked.code || !picked.name || !picked.category) return { type: 'attack' };
+      if (picked.skill_id === null || picked.active_skill_id === null || !picked.code || !picked.name || !picked.category || unavailablePvpSkillCodes.has(picked.code)) return { type: 'attack' };
       return { type: 'skill', id: Number(picked.active_skill_id), code: picked.code, name: picked.name, category: picked.category, requiredWeaponType: picked.required_weapon_type, manaCost: Number(picked.mana_cost), power: Number(picked.power), cooldown: Number(picked.cooldown_turns) };
     }
   }
   if (manual) return { type: 'attack' };
   const [quick] = await connection.execute<(RowDataPacket & { id: number; code: string; name: string; category: 'physical' | 'magic' | 'utility'; required_weapon_type: string | null; mana_cost: number; power: number; cooldown_turns: number })[]>('SELECT s.id,s.code,s.name,s.category,s.required_weapon_type,s.mana_cost,s.power,s.cooldown_turns FROM player_skills ps JOIN skill_definitions s ON s.id=ps.skill_id WHERE ps.character_id=? AND ps.quick_slot IS NOT NULL AND s.category IN (\'physical\',\'magic\',\'utility\') ORDER BY ps.quick_slot', [character.id]);
-  if (!quick.length) return { type: 'attack' };
-  const picked = random(quick);
+  const available = quick.filter(skill => !unavailablePvpSkillCodes.has(skill.code));
+  if (!available.length) return { type: 'attack' };
+  const picked = random(available);
   return { type: 'skill', id: Number(picked.id), code: picked.code, name: picked.name, category: picked.category, requiredWeaponType: picked.required_weapon_type, manaCost: Number(picked.mana_cost), power: Number(picked.power), cooldown: Number(picked.cooldown_turns) };
 };
 
@@ -649,7 +654,8 @@ const battleActionFromSlot = async (connection: PoolConnection, character: PvpCh
       : `SELECT s.id,s.code,s.name,s.category,s.required_weapon_type,s.mana_cost,s.power,s.cooldown_turns
           FROM player_skills ps JOIN skill_definitions s ON s.id=ps.skill_id WHERE ps.character_id=? AND ps.quick_slot=? LIMIT 1`, skillId ? [character.id, skillId] : [character.id, slot ?? 0]);
     if (!rows[0]) throw new Error(skillId ? '二转技能尚未学习。' : `技能${'①②③④'.charAt(Math.max(0, (slot ?? 1) - 1)) || slot}未配置。`);
-    const skill = rows[0]; return { type: 'skill', id: Number(skill.id), code: skill.code, name: skill.name, category: skill.category, requiredWeaponType: skill.required_weapon_type, manaCost: Number(skill.mana_cost), power: Number(skill.power), cooldown: Number(skill.cooldown_turns) };
+    const skill = rows[0]; if (unavailablePvpSkillCodes.has(skill.code)) throw new Error('该二转技能暂不可用于玩家对战。');
+    return { type: 'skill', id: Number(skill.id), code: skill.code, name: skill.name, category: skill.category, requiredWeaponType: skill.required_weapon_type, manaCost: Number(skill.mana_cost), power: Number(skill.power), cooldown: Number(skill.cooldown_turns) };
   }
   const [rows] = await connection.execute<(RowDataPacket & { id: number; code:string; name: string; effect_json: unknown })[]>(`SELECT i.id,i.code,i.name,i.effect_json FROM player_quick_items qi
     JOIN player_inventory pi ON pi.character_id=qi.character_id AND pi.item_id=qi.item_id AND pi.quantity>0
@@ -706,7 +712,7 @@ const sessionView = async (connection: PoolConnection, battle: PvpBattleRow, cha
   const deviceSlots = await combatDeviceSlotsFor(connection, battle.id, Number(character.id), false, 'pvp');
   await initializeHiddenBattleUnits(connection,[{key:`pvp:${character.id}`,cooldowns}]);
   return { sessionId: battle.id, mode: 'pvp', selectedAllyId: Number(cooldowns.__selectedAlly) || null, canEnchant: skills.some(s => s.code === 'resident_a02'), enchantElement: String(cooldowns.__enchantElement ?? '风'), characterId: Number(character.id), turn: Number(battle.turn_no), playerHp: ownHp, playerHpMax: Number(character.hp_max), playerMp: ownMp, playerMpMax: Number(character.mp_max), selectedTargetId: enemyId,
-    canAct: ownAttacker && ownHp > 0 && !readRuleState(cooldowns.__rules).cast, resource: hiddenResourceView(cooldowns), skillSlots: skills.map(row => Number(row.quick_slot)), readySkillSlots: skills.filter(row => Number(cooldowns[row.code] ?? 0) <= 0).map(row => Number(row.quick_slot)), advancedSkills: advancedSkillRows.filter(skill => isAdvancedProfessionSkillCode(skill.code)).map(skill => ({ id: Number(skill.id), code: skill.code, name: skill.name, ready: Number(cooldowns[skill.code] ?? 0) <= 0 })), itemSlots: items.map(row => Number(row.quick_slot)), appraisal: { learned: false, rangeLevel: 0, informationLevel: 0 },
+    canAct: ownAttacker && ownHp > 0 && !readRuleState(cooldowns.__rules).cast, resource: hiddenResourceView(cooldowns), skillSlots: skills.filter(row => !unavailablePvpSkillCodes.has(row.code)).map(row => Number(row.quick_slot)), readySkillSlots: skills.filter(row => !unavailablePvpSkillCodes.has(row.code) && Number(cooldowns[row.code] ?? 0) <= 0).map(row => Number(row.quick_slot)), advancedSkills: advancedSkillRows.filter(skill => isAdvancedProfessionSkillCode(skill.code) && !unavailablePvpSkillCodes.has(skill.code)).map(skill => ({ id: Number(skill.id), code: skill.code, name: skill.name, ready: Number(cooldowns[skill.code] ?? 0) <= 0 })), itemSlots: items.map(row => Number(row.quick_slot)), appraisal: { learned: false, rangeLevel: 0, informationLevel: 0 },
     members: [{ statusText: ruleStatusSummary(readRuleState(cooldowns.__rules), Number(battle.turn_no)), id: Number(character.id), name: character.name, hp: ownHp, hpMax: Number(character.hp_max), mp: ownMp, mpMax: Number(character.mp_max), resource: hiddenResourceView(cooldowns), defeated: ownHp <= 0, pending: false, chanting: residentSkillByCode(readRuleState(cooldowns.__rules).cast?.code ?? '')?.name ?? null, extraAction: Boolean(cooldowns.__bonusAction) }], spirits: [], deviceSlots: deviceSlots.map(device => ({ ...device, skills: device.skills.map(skill => ({ ...skill, ready: Number(cooldowns[`device_${device.instanceId}_${skill.code}`] ?? 0) <= 0 })) })), environment: null,
     targets: enemy ? [{ statusText: hidden ? '信息被雾遮蔽' : ruleStatusSummary(enemyState, Number(battle.turn_no), false), id: enemyId, name: hidden ? '信息被雾遮蔽' : enemy.name, level: Number(enemy.level), hp: hidden ? '???' : enemyHp, hpMax: hidden ? '???' : Number(enemy.hp_max), mp: hidden ? '???' : enemyMp, mpMax: hidden ? '???' : Number(enemy.mp_max), defeated: enemyHp <= 0, identified: !hidden }] : []
   };
@@ -856,6 +862,10 @@ export const pvpCombatAction = async (qqUserId: string, type: 'attack' | 'skill'
     if (queuedChants.has(Number(turn.actor.id)) && !casting) { queuedChants.delete(Number(turn.actor.id)); log.push(`➤【${unit.name}】的吟唱已被打断，本次行动结束。`); continue; }
     queuedChants.delete(Number(turn.actor.id));
     let rawAction = frozenAction(Number(turn.actor.id)) ?? (Number(turn.actor.id) === Number(attacker.id) ? requestedAction : await actionFor(connection, turn.actor));
+    if (rawAction?.type === 'skill' && unavailablePvpSkillCodes.has(rawAction.code)) {
+      if (!turn.automatic) throw new Error('该二转技能暂不可用于玩家对战。');
+      rawAction = { type: 'attack' };
+    }
     if (rawAction?.type === 'skill' && !casting) {
       const [definitions] = await connection.execute<RowDataPacket[]>('SELECT code,category,tier,power,mana_cost,cooldown_turns,chant_turns FROM skill_definitions WHERE id=?', [rawAction.id]);
       const [levels] = await connection.execute<RowDataPacket[]>('SELECT specialization,level FROM player_skill_specializations WHERE character_id=? AND skill_id=?', [turn.actor.id, rawAction.id]);
@@ -1099,7 +1109,7 @@ export const addWarrantReward = async (qqUserId: string, warrantId: number, item
   const [eligible] = await connection.execute<RowDataPacket[]>('SELECT 1 FROM pvp_stolen_loot WHERE original_owner_character_id=? AND holder_character_id=? AND returned_at IS NULL LIMIT 1 FOR UPDATE', [issuer.id, warrant.wanted_character_id]);
   if (!eligible[0]) throw new Error('只有被该通缉者夺走失物的玩家可以追加赏金。');
   if (copper > 0) { const [spent] = await connection.execute<any>('UPDATE characters SET copper_coins=copper_coins-? WHERE id=? AND copper_coins>=?', [copper, issuer.id, copper]); if (!Number(spent.affectedRows)) throw new Error('铜币不足。'); }
-  if (itemId) { const [items] = await connection.execute<(RowDataPacket & { quantity: number; name: string })[]>('SELECT pi.quantity,i.name FROM player_inventory pi JOIN item_definitions i ON i.id=pi.item_id WHERE pi.character_id=? AND pi.item_id=? AND i.is_tradeable=1 FOR UPDATE', [issuer.id, itemId]); if (!items[0] || Number(items[0].quantity) < quantity) throw new Error('用于悬赏的物品数量不足或不可交易。'); await connection.execute('UPDATE player_inventory SET quantity=quantity-? WHERE character_id=? AND item_id=?', [quantity, issuer.id, itemId]); await connection.execute('DELETE FROM player_inventory WHERE character_id=? AND item_id=? AND quantity<=0', [issuer.id, itemId]); }
+  if (itemId) { const [items] = await connection.execute<RowDataPacket[]>('SELECT id FROM item_definitions WHERE id=? AND is_tradeable=1', [itemId]); if (!items[0]) throw new Error('用于悬赏的物品不可交易。'); await consumeInventory(connection, Number(issuer.id), itemId, quantity, true); }
   const [reward] = await connection.execute<ResultSetHeader>('INSERT INTO player_warrant_rewards (warrant_id,issuer_character_id,reward_item_id,quantity,copper_amount) VALUES (?,?,?,?,?)', [warrantId, issuer.id, itemId, quantity, copper]);
   if (copper > 0 || itemId && quantity > 0) await recordCharacterOperation(connection, { characterId: Number(issuer.id), kind: 'pvp.warrant_reward_added', source: { system: 'player_warrant_rewards', id: Number(reward.insertId), step: 'added' }, outcome: '追加', summary: '向通缉令追加赏金', detail: { warrantId, rewardId: Number(reward.insertId), itemId, quantity, copper } });
   return { copper, quantity };

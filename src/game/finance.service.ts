@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { getPool, withTransaction } from '../database/pool';
 import { recordCharacterOperation } from './character-operation.service';
 import { financeFaction } from './finance-content';
@@ -39,7 +39,9 @@ const assertStationary = async (connection: PoolConnection, character: Character
   if (numeric(character.is_spawn_enabled) || numeric(character.is_owner_only) || !numeric(character.is_enabled)) throw new Error('请前往已开放的安全区。');
   const [travel] = await connection.execute<RowDataPacket[]>('SELECT 1 FROM player_travels WHERE character_id=? LIMIT 1', [character.id]);
   if (travel.length) throw new Error('旅行途中不能办理钱庄或证券业务。');
-  const [combat] = await connection.execute<RowDataPacket[]>('SELECT 1 FROM combat_sessions WHERE character_id=? AND state=\'active\' LIMIT 1', [character.id]);
+  const [combat] = await connection.execute<RowDataPacket[]>(`SELECT 1 FROM combat_sessions cs
+    LEFT JOIN combat_members cm ON cm.session_id=cs.id
+    WHERE cs.state='active' AND (cs.character_id=? OR cm.character_id=?) LIMIT 1`, [character.id, character.id]);
   if (combat.length) throw new Error('战斗中不能办理钱庄或证券业务。');
   const [pvp] = await connection.execute<RowDataPacket[]>("SELECT 1 FROM player_pvp_battle_sessions WHERE (attacker_character_id=? OR defender_character_id=?) AND state='active' LIMIT 1", [character.id, character.id]);
   if (pvp.length) throw new Error('玩家对战中不能办理钱庄或证券业务。');
@@ -49,10 +51,11 @@ const assertAtBuilding = async (connection: PoolConnection, character: Character
   const [rows] = await connection.execute<RowDataPacket[]>('SELECT 1 FROM map_npcs WHERE region_id=? AND code=? AND pos_x=? AND pos_y=? AND pos_z=? AND interaction_kind=\'building\' LIMIT 1', [character.current_region_id, code, character.pos_x, character.pos_y, character.pos_z]);
   if (!rows.length) throw new Error('请站在对应建筑入口办理。');
 };
-const bankAccount = async (connection: PoolConnection, characterId: number): Promise<Account> => {
-  await connection.execute('INSERT IGNORE INTO finance_bank_accounts (character_id) VALUES (?)', [characterId]);
+const bankAccount = async (connection: PoolConnection, characterId: number, create = true): Promise<Account> => {
+  if (create) await connection.execute('INSERT IGNORE INTO finance_bank_accounts (character_id) VALUES (?)', [characterId]);
   const [rows] = await connection.execute<Account[]>('SELECT demand_copper FROM finance_bank_accounts WHERE character_id=? FOR UPDATE', [characterId]);
-  return rows[0]!;
+  if (create && !rows[0]) throw new Error('钱庄账户暂时不可用。');
+  return rows[0] ?? { demand_copper: 0 } as Account;
 };
 const poolBalance = async (connection: PoolConnection, code: string): Promise<number> => {
   const [rows] = await connection.execute<PoolRow[]>('SELECT copper FROM finance_pools WHERE code=? FOR UPDATE', [code]);
@@ -71,18 +74,45 @@ const splitFee = async (connection: PoolConnection, characterId: number, key: st
   if (burned) { await connection.execute("UPDATE finance_pools SET copper=copper+? WHERE code='fees_burned'", [burned]); await ledger(connection, characterId, `${key}:burn`, 'trade_fee', `bank:${characterId}`, 'pool:fees_burned', burned); }
 };
 
-export const bankSummary = async (qqUserId: string) => {
-  const pool = await getPool(); const character = await characterFor(pool, qqUserId);
-  const [accounts] = await pool.execute<Account[]>('SELECT demand_copper FROM finance_bank_accounts WHERE character_id=?', [character.id]);
-  const [openDeposits] = await pool.execute<Deposit[]>('SELECT id,product_code,principal_copper,reserved_interest_copper,matures_ms,status FROM finance_bank_deposits WHERE character_id=? AND status=\'open\' ORDER BY id DESC', [character.id]);
-  const [recentDeposits] = await pool.execute<Deposit[]>('SELECT id,product_code,principal_copper,reserved_interest_copper,matures_ms,status FROM finance_bank_deposits WHERE character_id=? AND status<>\'open\' ORDER BY id DESC LIMIT 3', [character.id]);
+const bankSummaryFor = async (connection: Pool | PoolConnection, character: Character) => {
+  const [accounts] = await connection.execute<Account[]>('SELECT demand_copper FROM finance_bank_accounts WHERE character_id=?', [character.id]);
+  const [openDeposits] = await connection.execute<Deposit[]>('SELECT id,product_code,principal_copper,reserved_interest_copper,matures_ms,status FROM finance_bank_deposits WHERE character_id=? AND status=\'open\' ORDER BY id DESC', [character.id]);
+  const [recentDeposits] = await connection.execute<Deposit[]>('SELECT id,product_code,principal_copper,reserved_interest_copper,matures_ms,status FROM finance_bank_deposits WHERE character_id=? AND status<>\'open\' ORDER BY id DESC LIMIT 3', [character.id]);
   return { pocket: safeInt(character.copper_coins, '随身余额'), demand: safeInt(accounts[0]?.demand_copper, '活期余额'), openCount: openDeposits.length, deposits: [...openDeposits, ...recentDeposits].map(row => ({ id: numeric(row.id), product: product[row.product_code]?.name ?? row.product_code, principal: numeric(row.principal_copper), interest: numeric(row.reserved_interest_copper), due: numeric(row.matures_ms), status: row.status })) };
 };
+export const bankSummary = async (qqUserId: string) => {
+  const pool = await getPool(); return bankSummaryFor(pool, await characterFor(pool, qqUserId));
+};
+export const bankSummaryAtBuilding = (qqUserId: string) => withTransaction(async connection => {
+  const character = await characterFor(connection, qqUserId, true);
+  await assertAtBuilding(connection, character, 'silver_bell_bank');
+  return bankSummaryFor(connection, character);
+});
+export const bankDepositAtBuilding = (qqUserId: string, depositId: number) => withTransaction(async connection => {
+  const id = safeInt(depositId, '存单编号', 1);
+  const character = await characterFor(connection, qqUserId, true);
+  await assertAtBuilding(connection, character, 'silver_bell_bank');
+  const [rows] = await connection.execute<Deposit[]>('SELECT id,product_code,principal_copper,reserved_interest_copper,matures_ms,status FROM finance_bank_deposits WHERE id=? AND character_id=? LIMIT 1', [id, character.id]);
+  const deposit = rows[0]; if (!deposit) throw new Error('未找到你的存单。');
+  const matured = Date.now() >= numeric(deposit.matures_ms);
+  return { id: numeric(deposit.id), productCode: deposit.product_code, productName: product[deposit.product_code]?.name ?? deposit.product_code,
+    principalCopper: safeInt(deposit.principal_copper, '本金'), reservedInterestCopper: safeInt(deposit.reserved_interest_copper, '预留利息'),
+    maturesMs: numeric(deposit.matures_ms), status: deposit.status, matured,
+    availableActions: deposit.status !== 'open' ? [] : matured ? ['settle'] : deposit.product_code === 'hundred' ? [] : ['early_settle'] };
+});
 
-export const bankTransfer = async (qqUserId: string, amount: number, direction: 'in' | 'out') => withTransaction(async connection => {
+export const bankTransferInTransaction = async (connection: PoolConnection, qqUserId: string, amount: number, direction: 'in' | 'out', preview = false) => {
   const copper = safeInt(amount, '金额', 1, 99_999_999);
   const character = await characterFor(connection, qqUserId, true); await assertAtBuilding(connection, character, 'silver_bell_bank');
-  const account = await bankAccount(connection, numeric(character.id));
+  const account = await bankAccount(connection, numeric(character.id), !preview);
+  const pocketBefore = safeInt(character.copper_coins, '随身余额');
+  const demandBefore = safeInt(account.demand_copper, '活期余额');
+  if (direction !== 'in' && direction !== 'out') throw new Error('未知钱庄操作。');
+  if (direction === 'in' && pocketBefore < copper) throw new Error('随身银币不足。');
+  if (direction === 'out' && demandBefore < copper) throw new Error('活期余额不足。');
+  const quote = { copper, direction, pocketBefore, pocketAfter: pocketBefore + (direction === 'in' ? -copper : copper),
+    demandBefore, demandAfter: demandBefore + (direction === 'in' ? copper : -copper) };
+  if (preview) return quote;
   const eventKey = `bank:${character.id}:${randomUUID()}`;
   if (direction === 'in') {
     const [deduct] = await connection.execute<ResultSetHeader>('UPDATE characters SET copper_coins=copper_coins-? WHERE id=? AND copper_coins>=?', [copper, character.id, copper]);
@@ -90,39 +120,49 @@ export const bankTransfer = async (qqUserId: string, amount: number, direction: 
     await connection.execute('UPDATE finance_bank_accounts SET demand_copper=demand_copper+? WHERE character_id=?', [copper, character.id]);
     await ledger(connection, character.id, eventKey, 'deposit', `pocket:${character.id}`, `bank:${character.id}`, copper);
   } else {
-    if (safeInt(account.demand_copper, '活期余额') < copper) throw new Error('活期余额不足。');
-    await connection.execute('UPDATE finance_bank_accounts SET demand_copper=demand_copper-? WHERE character_id=? AND demand_copper>=?', [copper, character.id, copper]);
+    const [deduct] = await connection.execute<ResultSetHeader>('UPDATE finance_bank_accounts SET demand_copper=demand_copper-? WHERE character_id=? AND demand_copper>=?', [copper, character.id, copper]);
+    if (!deduct.affectedRows) throw new Error('活期余额不足。');
     await connection.execute('UPDATE characters SET copper_coins=copper_coins+? WHERE id=?', [copper, character.id]);
     await ledger(connection, character.id, eventKey, 'withdraw', `bank:${character.id}`, `pocket:${character.id}`, copper);
   }
   await recordCharacterOperation(connection, { characterId: numeric(character.id), kind: direction === 'in' ? 'bank.deposited' : 'bank.withdrawn', source: { system: 'finance_ledger', id: eventKey, step: 'settled' }, outcome: '已结算', summary: `${direction === 'in' ? '存入' : '取出'}活期 ${copper} 铜币`, detail: { amountCopper: copper, direction } });
-  return { copper, direction };
-});
+  return quote;
+};
+export const bankTransfer = (qqUserId: string, amount: number, direction: 'in' | 'out') =>
+  withTransaction(connection => bankTransferInTransaction(connection, qqUserId, amount, direction));
 
-export const openBankDeposit = async (qqUserId: string, code: DepositProduct, amount: number) => withTransaction(async connection => {
+export const openBankDepositInTransaction = async (connection: PoolConnection, qqUserId: string, code: DepositProduct, amount: number, preview = false) => {
   const terms = product[code]; if (!terms) throw new Error('未知存单期限。');
   const copper = safeInt(amount, '本金', terms.min, 99_999_999);
   const character = await characterFor(connection, qqUserId, true); await assertAtBuilding(connection, character, 'silver_bell_bank');
-  const account = await bankAccount(connection, character.id);
+  const account = await bankAccount(connection, character.id, !preview);
   const [openCount] = await connection.execute<(RowDataPacket & { n: number })[]>('SELECT COUNT(*) n FROM finance_bank_deposits WHERE character_id=? AND status=\'open\'', [character.id]);
   if (numeric(openCount[0]?.n) >= 3) throw new Error('每名角色最多同时持有 3 张未结定存；其余资金可留在活期。');
   if (numeric(account.demand_copper) < copper) throw new Error('活期余额不足。');
   const interestPool = await poolBalance(connection, 'interest');
   const interest = reservedInterestCopper(copper, terms.basisPoints, interestPool);
   const now = Date.now(), due = now + terms.days * 86400000;
+  const quote = { copper, interest, due, name: terms.name, productCode: code, demandBefore: safeInt(account.demand_copper, '活期余额'), demandAfter: safeInt(account.demand_copper, '活期余额') - copper };
+  if (preview) return quote;
   const [result] = await connection.execute<ResultSetHeader>('INSERT INTO finance_bank_deposits (character_id,product_code,principal_copper,reserved_interest_copper,opened_ms,matures_ms) VALUES (?,?,?,?,?,?)', [character.id, code, copper, interest, now, due]);
   await connection.execute('UPDATE finance_bank_accounts SET demand_copper=demand_copper-? WHERE character_id=?', [copper, character.id]);
   if (interest) await connection.execute("UPDATE finance_pools SET copper=copper-? WHERE code='interest'", [interest]);
   await ledger(connection, character.id, `deposit:${result.insertId}:principal`, 'term_open', `bank:${character.id}`, `term:${result.insertId}`, copper);
   await ledger(connection, character.id, `deposit:${result.insertId}:interest`, 'interest_reserved', 'pool:interest', `term:${result.insertId}`, interest);
   await recordCharacterOperation(connection, { characterId: numeric(character.id), kind: 'bank.term_opened', source: { system: 'bank_deposit', id: numeric(result.insertId), step: 'opened' }, outcome: '已开立', summary: `开立${terms.name}：本金 ${copper} 铜币`, detail: { depositId: numeric(result.insertId), productCode: code, productName: terms.name, principalCopper: copper, reservedInterestCopper: interest, maturesMs: due } });
-  return { id: numeric(result.insertId), copper, interest, due, name: terms.name };
-});
+  return { id: numeric(result.insertId), ...quote };
+};
+export const openBankDeposit = (qqUserId: string, code: DepositProduct, amount: number) =>
+  withTransaction(async connection => {
+    const result = await openBankDepositInTransaction(connection, qqUserId, code, amount);
+    if (!('id' in result)) throw new Error('定存未能开立。');
+    return result;
+  });
 
-export const settleBankDeposit = async (qqUserId: string, depositId: number, early = false) => withTransaction(async connection => {
+export const settleBankDepositInTransaction = async (connection: PoolConnection, qqUserId: string, depositId: number, early = false, preview = false) => {
   const id = safeInt(depositId, '存单编号', 1);
   const character = await characterFor(connection, qqUserId, true); await assertAtBuilding(connection, character, 'silver_bell_bank');
-  await bankAccount(connection, character.id);
+  const account = await bankAccount(connection, character.id, !preview);
   const [rows] = await connection.execute<Deposit[]>('SELECT id,product_code,principal_copper,reserved_interest_copper,matures_ms,status FROM finance_bank_deposits WHERE id=? AND character_id=? FOR UPDATE', [id, character.id]);
   const deposit = rows[0]; if (!deposit || deposit.status !== 'open') throw new Error('未找到可结算的存单。');
   const matured = Date.now() >= numeric(deposit.matures_ms);
@@ -131,6 +171,10 @@ export const settleBankDeposit = async (qqUserId: string, depositId: number, ear
   const principal = safeInt(deposit.principal_copper, '本金'), interest = safeInt(deposit.reserved_interest_copper, '预留利息');
   const penalty = !matured && deposit.product_code === 'thirty' ? Math.ceil(principal * .005) : 0;
   const credit = principal - penalty + (matured ? interest : 0);
+  const demandBefore = safeInt(account.demand_copper, '活期余额');
+  const quote = { depositId: id, productCode: deposit.product_code, principal, credit, interest: matured ? interest : 0,
+    penalty, matured, due: numeric(deposit.matures_ms), demandBefore, demandAfter: demandBefore + credit };
+  if (preview) return quote;
   await connection.execute('UPDATE finance_bank_accounts SET demand_copper=demand_copper+? WHERE character_id=?', [credit, character.id]);
   await connection.execute('UPDATE finance_bank_deposits SET status=?,settled_ms=? WHERE id=?', [matured ? 'matured' : 'early', Date.now(), id]);
   if (!matured && interest + penalty) await connection.execute("UPDATE finance_pools SET copper=copper+? WHERE code='interest'", [interest + penalty]);
@@ -138,8 +182,10 @@ export const settleBankDeposit = async (qqUserId: string, depositId: number, ear
   if (!matured && interest) await ledger(connection, character.id, `deposit:${id}:interest_return`, 'interest_return', `term:${id}`, 'pool:interest', interest);
   if (penalty) await ledger(connection, character.id, `deposit:${id}:penalty`, 'term_penalty', `term:${id}`, 'pool:interest', penalty);
   await recordCharacterOperation(connection, { characterId: numeric(character.id), kind: matured ? 'bank.term_matured' : 'bank.term_early', source: { system: 'bank_deposit', id, step: 'settled' }, outcome: matured ? '到期结算' : '提前支取', summary: `${matured ? '结算' : '提前支取'}存单 ${id}`, detail: { depositId: id, principalCopper: principal, interestCopper: matured ? interest : 0, penaltyCopper: penalty, creditedCopper: credit } });
-  return { credit, interest: matured ? interest : 0, penalty, matured };
-});
+  return quote;
+};
+export const settleBankDeposit = (qqUserId: string, depositId: number, early = false) =>
+  withTransaction(connection => settleBankDepositInTransaction(connection, qqUserId, depositId, early));
 
 export const financeCatalog = async (qqUserId: string) => {
   const pool = await getPool(); const character = await characterFor(pool, qqUserId);

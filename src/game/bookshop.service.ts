@@ -2,26 +2,55 @@ import { achievementBookSource } from './achievement-state';
 import { randomUUID } from 'node:crypto';
 import { recordCharacterOperation } from './character-operation.service';
 import { recordAchievement } from './achievement-events';
-import { grantInventory } from './inventory-binding';
-import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
+import { consumeInventory, grantInventory } from './inventory-binding';
+import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { getPool, withTransaction } from '../database/pool';
 import { recordPvpLootSale } from './pvp.service';
 
 const PAGE_SIZE = 5;
-type CharacterRow = RowDataPacket & { id: number; copper_coins: number };
+export const BOOKSHOP_TARGET_ID = 'bookshop';
+type CharacterRow = RowDataPacket & { id: number; copper_coins: number; activity_status: string; current_region_id: number; pos_x: number; pos_y: number; pos_z: number };
 type ShopRow = RowDataPacket & { id: number; codex_id: string; name: string; item_category: string; description: string; buy_price: number; stock_quantity: number; owned_quantity: number };
 type SellRow = RowDataPacket & { id: number; name: string; item_category: string; quantity: number; price: number };
 
 const characterFor = async (connection: Pool | PoolConnection, qqUserId: string, lock = false) => {
-  const [rows] = await connection.execute<CharacterRow[]>(`SELECT c.id,c.copper_coins FROM characters c JOIN players p ON p.id=c.player_id WHERE p.qq_user_id=? LIMIT 1${lock ? ' FOR UPDATE' : ''}`, [qqUserId]);
+  const [rows] = await connection.execute<CharacterRow[]>(`SELECT c.id,c.copper_coins,c.activity_status,c.current_region_id,c.pos_x,c.pos_y,c.pos_z FROM characters c JOIN players p ON p.id=c.player_id WHERE p.qq_user_id=? LIMIT 1${lock ? ' FOR UPDATE' : ''}`, [qqUserId]);
   if (!rows[0]) throw new Error('请先注册角色。');
   return rows[0];
+};
+export const requireBookshopAtCurrentPosition = async (connection: Pool | PoolConnection, character: CharacterRow) => {
+  const [rows] = await connection.execute<RowDataPacket[]>(`SELECT 1 FROM map_npcs WHERE code=? AND region_id=? AND pos_x=? AND pos_y=? AND pos_z=? LIMIT 1`,
+    [BOOKSHOP_TARGET_ID, character.current_region_id, character.pos_x, character.pos_y, character.pos_z]);
+  if (!rows[0]) throw new Error('你已经离开该目标坐标，无法继续互动。');
+};
+const assertBookshopFree = async (connection: Pool | PoolConnection, character: CharacterRow) => {
+  if (character.activity_status !== 'active') throw new Error('当前状态无法在百味书屋买卖。');
+  const [travel] = await connection.execute<RowDataPacket[]>('SELECT 1 FROM player_travels WHERE character_id=? LIMIT 1', [character.id]);
+  if (travel[0]) throw new Error('旅行途中无法在百味书屋买卖。');
+  const [combat] = await connection.execute<RowDataPacket[]>(`SELECT 1 FROM combat_sessions cs
+    LEFT JOIN combat_members cm ON cm.session_id=cs.id
+    WHERE cs.state='active' AND (cs.character_id=? OR cm.character_id=?) LIMIT 1`, [character.id, character.id]);
+  if (combat[0]) throw new Error('战斗中无法在百味书屋买卖。');
+  const [pvp] = await connection.execute<RowDataPacket[]>(`SELECT 1 FROM player_pvp_battle_sessions
+    WHERE state='active' AND (attacker_character_id=? OR defender_character_id=?) LIMIT 1`, [character.id, character.id]);
+  if (pvp[0]) throw new Error('玩家对战中无法在百味书屋买卖。');
+};
+const bookshopCharacterFor = async (connection: Pool | PoolConnection, qqUserId: string, lock = false) => {
+  const character = await characterFor(connection, qqUserId, lock);
+  await requireBookshopAtCurrentPosition(connection, character);
+  await assertBookshopFree(connection, character);
+  return character;
+};
+export const requireBookshopTarget = async (connection: Pool | PoolConnection, qqUserId: string, targetId: string, lock = false) => {
+  if (targetId !== BOOKSHOP_TARGET_ID) throw new Error('书屋目标无效。');
+  const character = await bookshopCharacterFor(connection, qqUserId, lock);
+  return { characterId: Number(character.id), target: { id: BOOKSHOP_TARGET_ID, name: '百味书屋', locationRequired: true } };
 };
 const paging = (page: number, total: number) => ({ page: Math.min(Math.max(1, page), Math.max(1, Math.ceil(total / PAGE_SIZE))), totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)) });
 const amountOf = (value: number) => { if (!Number.isInteger(value) || value < 1 || value > 999) throw new Error('数量必须是 1 至 999 之间的整数。'); return value; };
 
 export const bookshopCatalog = async (qqUserId: string, page = 1, keyword = '') => {
-  const pool = await getPool(); const character = await characterFor(pool, qqUserId); const term = `%${keyword.trim()}%`;
+  const pool = await getPool(); const character = await bookshopCharacterFor(pool, qqUserId); const term = `%${keyword.trim()}%`;
   const [countRows] = await pool.execute<(RowDataPacket & { total: number })[]>('SELECT COUNT(*) AS total FROM bookshop_items bs JOIN item_definitions i ON i.id=bs.item_id WHERE bs.is_active=1 AND i.name LIKE ?', [term]);
   const info = paging(page, Number(countRows[0]?.total ?? 0));
   const [rows] = await pool.execute<ShopRow[]>(`SELECT i.id,i.codex_id,i.name,i.item_category,i.description,bs.buy_price,bs.stock_quantity,COALESCE(pi.quantity,0) AS owned_quantity
@@ -31,7 +60,7 @@ export const bookshopCatalog = async (qqUserId: string, page = 1, keyword = '') 
 };
 
 export const bookshopSellCatalog = async (qqUserId: string, page = 1, keyword = '') => {
-  const pool = await getPool(); const character = await characterFor(pool, qqUserId); const term = `%${keyword.trim()}%`;
+  const pool = await getPool(); const character = await bookshopCharacterFor(pool, qqUserId); const term = `%${keyword.trim()}%`;
   const where = "pi.character_id=? AND pi.quantity>0 AND i.is_tradeable=1 AND i.trade_price>0 AND i.item_category IN ('书籍','卷宗','技能书') AND i.name LIKE ?";
   const [countRows] = await pool.execute<(RowDataPacket & { total: number })[]>(`SELECT COUNT(*) AS total FROM player_inventory pi JOIN item_definitions i ON i.id=pi.item_id WHERE ${where}`, [character.id, term]);
   const info = paging(page, Number(countRows[0]?.total ?? 0));
@@ -39,9 +68,20 @@ export const bookshopSellCatalog = async (qqUserId: string, page = 1, keyword = 
   return { ...info, keyword: keyword.trim(), copper: Number(character.copper_coins), items: rows.map(row => ({ id: Number(row.id), name: row.name, category: row.item_category, quantity: Number(row.quantity), price: Number(row.price) })) };
 };
 
-export const buyBookshopItem = async (qqUserId: string, itemId: number, quantity = 1) => withTransaction(async connection => {
-  const amount = amountOf(quantity); const character = await characterFor(connection, qqUserId, true);
-  const [rows] = await connection.execute<(RowDataPacket & { name: string; code: string; is_tradeable: number; skill_code: string | null; buy_price: number; stock_quantity: number })[]>("SELECT i.name,i.code,i.is_tradeable,JSON_UNQUOTE(JSON_EXTRACT(i.effect_json,'$.skillBook')) AS skill_code,bs.buy_price,bs.stock_quantity FROM bookshop_items bs JOIN item_definitions i ON i.id=bs.item_id WHERE bs.item_id=? AND bs.is_active=1 FOR UPDATE", [itemId]);
+export const bookshopItemDetail = async (qqUserId: string, itemId: number) => {
+  const pool = await getPool(); const character = await bookshopCharacterFor(pool, qqUserId);
+  const [rows] = await pool.execute<ShopRow[]>(`SELECT i.id,i.codex_id,i.name,i.item_category,i.description,bs.buy_price,bs.stock_quantity,COALESCE(pi.quantity,0) AS owned_quantity
+    FROM bookshop_items bs JOIN item_definitions i ON i.id=bs.item_id LEFT JOIN player_inventory pi ON pi.character_id=? AND pi.item_id=i.id
+    WHERE bs.item_id=? AND bs.is_active=1 LIMIT 1`, [character.id, itemId]);
+  const item = rows[0]; if (!item) throw new Error('这本书已下架。');
+  return { copper: Number(character.copper_coins), item: { id: Number(item.id), codexId: item.codex_id, name: item.name,
+    category: item.item_category, description: item.description, price: Number(item.buy_price),
+    stockQuantity: Number(item.stock_quantity), ownedQuantity: Number(item.owned_quantity) } };
+};
+
+export const buyBookshopItemInTransaction = async (connection: PoolConnection, qqUserId: string, itemId: number, quantity = 1, preview = false) => {
+  const amount = amountOf(quantity); const character = await bookshopCharacterFor(connection, qqUserId, true);
+  const [rows] = await connection.execute<(RowDataPacket & { name: string; code: string; item_category: string; is_tradeable: number; skill_code: string | null; buy_price: number; stock_quantity: number })[]>("SELECT i.name,i.code,i.item_category,i.is_tradeable,JSON_UNQUOTE(JSON_EXTRACT(i.effect_json,'$.skillBook')) AS skill_code,bs.buy_price,bs.stock_quantity FROM bookshop_items bs JOIN item_definitions i ON i.id=bs.item_id WHERE bs.item_id=? AND bs.is_active=1 FOR UPDATE", [itemId]);
   const item = rows[0]; if (!item) throw new Error('这本书已下架。'); if (Number(item.stock_quantity) < amount) throw new Error(`库存不足，剩余 ${item.stock_quantity} 本。`);
   if (item.code.startsWith('skill_book_resident_')) {
     if (amount !== 1) throw new Error('技能书每次只能购买一本。');
@@ -50,24 +90,41 @@ export const buyBookshopItem = async (qqUserId: string, itemId: number, quantity
     if (known[0]) throw new Error('你已经领悟这项技能，无需重复购买技能书。');
   }
   const price = Number(item.buy_price) * amount; if (Number(character.copper_coins) < price) throw new Error(`铜币不足，需要 ${price} 铜币。`);
-  await connection.execute('UPDATE characters SET copper_coins=copper_coins-? WHERE id=?', [price, character.id]);
-  await connection.execute('UPDATE bookshop_items SET stock_quantity=stock_quantity-? WHERE item_id=?', [amount, itemId]);
+  const quote = { itemId, name: item.name, category: item.item_category, quantity: amount, unitPrice: Number(item.buy_price), price,
+    copperBefore: Number(character.copper_coins), copperAfter: Number(character.copper_coins) - price,
+    stockBefore: Number(item.stock_quantity), stockAfter: Number(item.stock_quantity) - amount, personalBound: !Number(item.is_tradeable) };
+  if (preview) return quote;
+  const [debit] = await connection.execute<ResultSetHeader>('UPDATE characters SET copper_coins=copper_coins-? WHERE id=? AND copper_coins>=?', [price, character.id, price]);
+  if (debit.affectedRows !== 1) throw new Error('铜币已变化，请重新获取报价。');
+  const [decrement] = await connection.execute<ResultSetHeader>('UPDATE bookshop_items SET stock_quantity=stock_quantity-? WHERE item_id=? AND is_active=1 AND stock_quantity>=?', [amount, itemId, amount]);
+  if (decrement.affectedRows !== 1) throw new Error('商品库存已变化，请重新获取报价。');
   await grantInventory(connection,Number(character.id),Number(itemId),{trade:item.is_tradeable?amount:0,personal:item.is_tradeable?0:amount,unbound:0});
   await connection.execute('INSERT IGNORE INTO player_item_codex (character_id,item_id) VALUES (?,?)', [character.id, itemId]);
   recordAchievement(connection,Number(character.id),[{metric:'ACH_J16'},{metric:'ACH_K01'},{metric:'ACH_K08',value:price,life:true},{metric:'ACH_E23',distinct:String(itemId)}]);
   await recordCharacterOperation(connection, { characterId:Number(character.id),kind:'bookshop.bought',source:{system:'bookshop_purchase',id:randomUUID(),step:'settled'},outcome:'购入',summary:`在书店购买${item.name} ×${amount}`,detail:{itemId,itemName:item.name,quantity:amount,paidCopper:price} });
-  return { name: item.name, quantity: amount, price };
-});
+  return quote;
+};
+export const buyBookshopItem = async (qqUserId: string, itemId: number, quantity = 1) =>
+  withTransaction(connection => buyBookshopItemInTransaction(connection, qqUserId, itemId, quantity));
 
-export const sellBookshopItem = async (qqUserId: string, itemId: number, quantity = 1) => withTransaction(async connection => {
-  const amount = amountOf(quantity); const character = await characterFor(connection, qqUserId, true);
+export const sellBookshopItemInTransaction = async (connection: PoolConnection, qqUserId: string, itemId: number, quantity = 1, preview = false) => {
+  const amount = amountOf(quantity); const character = await bookshopCharacterFor(connection, qqUserId, true);
   const [rows] = await connection.execute<(SellRow & { is_tradeable: number; trade_price: number })[]>(`SELECT i.name,i.item_category,i.is_tradeable,i.trade_price,pi.quantity,CEIL(i.trade_price*1.20) AS price FROM player_inventory pi JOIN item_definitions i ON i.id=pi.item_id WHERE pi.character_id=? AND pi.item_id=? FOR UPDATE`, [character.id, itemId]);
   const item = rows[0]; if (!item || !item.is_tradeable || !Number(item.trade_price) || !['书籍', '卷宗', '技能书'].includes(item.item_category)) throw new Error('店主只收购可交易的书籍、卷宗与技能书。'); if (Number(item.quantity) < amount) throw new Error(`背包数量不足，当前仅有 ${item.quantity} 本。`);
-  const price = Number(item.price) * amount; await recordPvpLootSale(connection, Number(character.id), itemId, amount, price); await connection.execute('UPDATE player_inventory SET quantity=quantity-? WHERE character_id=? AND item_id=?', [amount, character.id, itemId]); await connection.execute('DELETE FROM player_inventory WHERE character_id=? AND item_id=? AND quantity<=0', [character.id, itemId]); await connection.execute('UPDATE characters SET copper_coins=copper_coins+? WHERE id=?', [price, character.id]);
+  const price = Number(item.price) * amount;
+  const quote = { itemId, name: item.name, category: item.item_category, quantity: amount, unitPrice: Number(item.price), price,
+    copperBefore: Number(character.copper_coins), copperAfter: Number(character.copper_coins) + price,
+    ownedBefore: Number(item.quantity), ownedAfter: Number(item.quantity) - amount };
+  if (preview) return quote;
+  await recordPvpLootSale(connection, Number(character.id), itemId, amount, price);
+  await consumeInventory(connection, Number(character.id), itemId, amount);
+  await connection.execute('UPDATE characters SET copper_coins=copper_coins+? WHERE id=?', [price, character.id]);
   recordAchievement(connection,Number(character.id),[{metric:'ACH_K09',value:price,life:true}]);
   await recordCharacterOperation(connection, { characterId:Number(character.id),kind:'bookshop.sold',source:{system:'bookshop_sale',id:randomUUID(),step:'settled'},outcome:'售出',summary:`向书店出售${item.name} ×${amount}`,detail:{itemId,itemName:item.name,quantity:amount,receivedCopper:price} });
-  return { name: item.name, quantity: amount, price };
-});
+  return quote;
+};
+export const sellBookshopItem = async (qqUserId: string, itemId: number, quantity = 1) =>
+  withTransaction(connection => sellBookshopItemInTransaction(connection, qqUserId, itemId, quantity));
 
 export const readSkillBook = async (qqUserId: string, itemId: number) => withTransaction(async connection => {
   const character = await characterFor(connection, qqUserId, true);

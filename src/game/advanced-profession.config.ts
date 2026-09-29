@@ -1,5 +1,6 @@
 import { advancedProfessionRoutes, type AdvancedProfessionRoute } from './advanced-profession-routes.config';
 import { hiddenProfessions, hiddenSkills, hiddenPassiveCode } from './hidden-profession.config';
+import { legacySpiritSummonerSkillCodes } from './spirit-summoner.config';
 
 export type AdvancedProfession = {
   code: string;
@@ -16,7 +17,7 @@ export type AdvancedProfession = {
 
 const trials = (code: string, name: string, description: string, skillCodes: string[], stats: AdvancedProfession['trial']['stats']): AdvancedProfession['trial'] => ({ code: `mentor_trial_${code}`, name, description, skillCodes, stats });
 
-export const worldTreeAdvancedProfessions: AdvancedProfession[] = [
+const originalAdvancedProfessions: AdvancedProfession[] = [
   { code: 'bulwark_guard', name: '盾卫', baseProfession: '战士', mentor: { code: 'mentor_bulwark_gareth', name: '加雷斯', title: '守根骑士', x: -8, y: -7 }, role: '前排承伤 / 守护队友', passive: { code: 'passive_guard_instinct', name: '守势直觉', description: '受到的伤害降低 4%。', effect: { damageReductionPct: 4 } }, route: advancedProfessionRoutes.ridge_foothills, first: { title: '盾上的名字', story: `加雷斯把缺角旧盾交给你：去岩脊山麓挡住山甲虫的冲撞，替旧护送队清出停靠点。`, targetCodes: ['mountain_beetle'], targetText: '山甲虫', requiredKills: 3 }, second: { title: '补回缺口', story: `清理封住护送道的石脉傀儡，带回岩脊核心修补旧盾。守护要从站稳缺口开始。`, targetCodes: ['stonevein_golem'], targetText: '石脉傀儡', requiredKills: 5, materialCount: 4 }, trial: trials('bulwark_gareth', '守根骑士·加雷斯', '加雷斯会用最沉的盾击询问：你愿意为谁留下。', ['warrior_taunt', 'shield_counter', 'shield_bash_player'], [74, 38, 58, 24, 33, 28]) },
   { code: 'war_lord', name: '战旗使', baseProfession: '战士', mentor: { code: 'mentor_warlord_oren', name: '奥伦', title: '旗语教官', x: -6, y: -8 }, role: '近战增益 / 节奏组织', passive: { code: 'passive_formation_voice', name: '阵前号令', description: '造成的伤害提高 3%。', effect: { damageBonusPct: 3 } }, route: advancedProfessionRoutes.dark_forest_deep, first: { title: '没有旗的队伍', story: `奥伦让你深入幽暗密林深处，击败哥布林战鼓手，辨认敌阵如何通过鼓声聚散。`, targetCodes: ['goblin_drummer'], targetText: '哥布林战鼓手', requiredKills: 3 }, second: { title: '让风记住方向', story: `击退封锁林间道路的哥布林盾卫，带回哥布林耳作为清路凭证，让同伴能并肩前进。`, targetCodes: ['goblin_shieldbearer'], targetText: '哥布林盾卫', requiredKills: 5, materialCount: 3 }, trial: trials('warlord_oren', '旗语教官·奥伦', '奥伦不替你下令；他只看你能否在混战里让人听见。', ['war_cry', 'sweeping_slash', 'piercing_thrust'], [62, 31, 61, 20, 42, 36]) },
   { code: 'ironbreaker', name: '剑豪', baseProfession: '战士', mentor: { code: 'mentor_ironbreaker_noll', name: '诺尔', title: '钝锋剑士', x: -4, y: -8 }, role: '爆发近战 / 破防处决', passive: { code: 'passive_edge_focus', name: '锋芒专注', description: '暴击+5%。', effect: { critRatePct: 5 } }, route: advancedProfessionRoutes.ridge_foothills, first: { title: '钝锋的分寸', story: `诺尔让你去岩脊山麓观察峭壁羊怪的发力，在冲撞的间隙练习收锋。`, targetCodes: ['cliff_ram'], targetText: '峭壁羊怪', requiredKills: 3 }, second: { title: '一线开石', story: `劈开旧矿道上的碎岩兽，收集岩脊核心辨认受力回音。剑豪只出必要的一剑。`, targetCodes: ['rubble_beast'], targetText: '碎岩兽', requiredKills: 5, materialCount: 4 }, trial: trials('ironbreaker_noll', '钝锋剑士·诺尔', '诺尔会让你先看见空隙，再决定是否挥剑。', ['heavy_strike', 'armor_break', 'charge'], [60, 27, 69, 18, 45, 34]) },
@@ -33,6 +34,21 @@ export const worldTreeAdvancedProfessions: AdvancedProfession[] = [
   { code: 'ranger_warden', name: '林巡', baseProfession: '射手', mentor: { code: 'mentor_ranger_vale', name: '维尔', title: '林道哨兵', x: -7, y: -3 }, role: '林伴共生 / 远程压制', passive: { code: 'passive_forest_scout', name: '林道侦察', description: '命中率提高 12%，速度提高 8%，闪避提高 5%。', effect: { accuracyPct: 12, speedPct: 8, evasionPct: 5 } }, route: advancedProfessionRoutes.mistalgae_marsh, first: { title: '雾中追踪', story: `维尔请你前往雾藻湿地，驱散水镜妖的虚假呼唤，在迷雾中追踪并击败敌人。`, targetCodes: ['watermirror_siren'], targetText: '水镜妖', requiredKills: 3 }, second: { title: '守望之路', story: `清理堵住旧巢的雾藻团，带回雾沼心作为守望的凭证。林巡的职责是让同伴安全通过。`, targetCodes: ['mistalgae_mass'], targetText: '雾藻团', requiredKills: 5, materialCount: 3 }, trial: trials('ranger_vale', '林道哨兵·维尔', '维尔会在雾中不断变换位置，考验你的追踪与压制能力。', ['ranger_hunters_mark', 'ranger_trap_barrage', 'ranger_flanking_shot'], [45, 35, 32, 58, 62, 55]) },
   { code: 'dawn_inquisitor', name: '晨星祷者', baseProfession: '牧师', mentor: { code: 'mentor_dawn_sola', name: '索拉', title: '晨星司祭', x: 8, y: -6 }, role: '光耀输出 / 团队祝福', passive: { code: 'passive_morning_psalm', name: '晨祷余辉', description: '光明技能伤害提高 6%。', effect: { lightSkillBonusPct: 6 } }, route: advancedProfessionRoutes.dark_forest_deep, first: { title: '晨钟余音', story: `索拉让你深入幽暗密林深处，击败哥布林祭司，驱散遮住旅人归路的阴影。`, targetCodes: ['goblin_priest'], targetText: '哥布林祭司', requiredKills: 3 }, second: { title: '让第一束光落下', story: `清除阻断晨光的哥布林法师，带回哥布林耳作为凭证。让第一束光落在需要方向的人身上。`, targetCodes: ['goblin_mage'], targetText: '哥布林法师', requiredKills: 5, materialCount: 3 }, trial: trials('dawn_sola', '晨星司祭·索拉', '索拉会以明灭不定的光考验你的信念与节奏。', ['sanctified_bolt', 'purifying_light', 'mana_benediction'], [47, 70, 27, 78, 34, 32]) }
 ];
+
+const arcaneMagister: AdvancedProfession = {
+  code: 'arcane_magister', name: '魔导', baseProfession: '法师',
+  mentor: { code: 'mentor_arcane_magister', name: '玄衡', title: '奥式导师', x: 7, y: 7 },
+  role: '高成本奥术爆发 / 法则贯穿',
+  passive: { code: 'passive_arcane_circuit', name: '奥术增幅', description: '魔法攻击提高 9%，最大魔力提高 15%；奥术负荷只按成功施法行动累计。', effect: { magicAttackPct: 9, mpPct: 15, arcaneLoad: 1 } },
+  route: advancedProfessionRoutes.rediron_pass,
+  first: { title: '未成形的奥式', story: '玄衡请你前往赤铁山道，击败磁石傀儡，观察能量术式如何穿过不稳定磁场。', targetCodes: ['magnet_golem'], targetText: '磁石傀儡', requiredKills: 3 },
+  second: { title: '法则的重量', story: '击退矿坑咒师，带回炉心赤晶校准奥术回路；高威力必须付出相应的魔力与冷却。', targetCodes: ['mine_hexer'], targetText: '矿坑咒师', requiredKills: 5, materialCount: 4 },
+  trial: trials('arcane_magister', '奥式导师·玄衡', '玄衡以高成本纯奥术检验你对施法窗口的判断。', ['arcane_bolt', 'spellblade_arcane_thrust', 'spellblade_starfire_duel'], [43, 70, 20, 76, 31, 39])
+};
+
+/** 世界树只列公开路线；旧唤灵师记录仍由地图隐藏目录识别。 */
+export const worldTreeAdvancedProfessions: AdvancedProfession[] = originalAdvancedProfessions.flatMap(entry =>
+  entry.code === 'spirit_summoner' ? [] : entry.code === 'spellblade' ? [entry, arcaneMagister] : [entry]);
 
 /** 以实际战斗结算为准校准固有被动：每条二转被动保留独立的定位与收益入口。 */
 const advancedPassiveBalance: Record<string, Pick<AdvancedProfession['passive'], 'description' | 'effect'> & { name?: string }> = {
@@ -52,7 +68,7 @@ const advancedPassiveBalance: Record<string, Pick<AdvancedProfession['passive'],
   gunner: { name: '火匠之道', description: '物理攻击提高 10%，暴击率修正 +18%，范围技能伤害提高 8%。', effect: { physicalAttackPct: 10, critRateCorrectionPct: 18, aoeSkillDamagePct: 8 } },
   ranger_warden: { name: '林语者', description: '命中属性提高 10%，速度提高 10%，闪避提高 5%，命中率修正 +12%；林伴继承属性额外提高 20%，林伴在场时自身受到的技能直击伤害降低 6%。', effect: { accuracyPct: 10, speedPct: 10, evasionPct: 5, hitCorrectionPct: 12, wardenInheritPct: 20, wardenDamageReductionPct: 6 } }
 };
-for (const profession of worldTreeAdvancedProfessions) {
+for (const profession of originalAdvancedProfessions.concat(arcaneMagister)) {
   const balance = advancedPassiveBalance[profession.code];
   if (balance) profession.passive = { ...profession.passive, ...balance };
 }
@@ -73,7 +89,7 @@ const mentorIdentities: Record<string, { name: string; title: string }> = {
   mentor_dawn_sola: { name: '曦歌', title: '晨星祷官' }
 };
 
-const mentorNameReplacements = new Map(worldTreeAdvancedProfessions.map(profession => [profession.mentor.name, mentorIdentities[profession.mentor.code]?.name ?? profession.mentor.name]));
+const mentorNameReplacements = new Map([...originalAdvancedProfessions, arcaneMagister].map(profession => [profession.mentor.name, mentorIdentities[profession.mentor.code]?.name ?? profession.mentor.name]));
 
 export const renameAdvancedMentorText = (text: string) => [...mentorNameReplacements.entries()].reduce((result, [previous, current]) => result.replaceAll(previous, current), text);
 
@@ -87,6 +103,23 @@ for (const profession of worldTreeAdvancedProfessions) {
   profession.mentor.title = identity.title;
   profession.trial.name = `${identity.title}·${identity.name}`;
 }
+
+export type MapHiddenAdvancedProfession = Pick<AdvancedProfession, 'code' | 'name' | 'baseProfession' | 'role' | 'passive'> & {
+  mentor: Pick<AdvancedProfession['mentor'], 'code' | 'name' | 'title'>;
+  trial: Pick<AdvancedProfession['trial'], 'code' | 'name' | 'description' | 'skillCodes' | 'stats'>;
+};
+
+/** 地图隐藏主职业的目录元数据；精确坐标只存在隐藏导师服务内。 */
+export const mapHiddenAdvancedProfessions: MapHiddenAdvancedProfession[] = [
+  { code: 'sword_shadow', name: '剑影', baseProfession: '战士', role: '连击与转火节奏', mentor: { code: 'mentor_shadow_sword', name: '无声剑客', title: '断塔剑师' }, passive: { code: 'passive_shadow_combo', name: '影势', description: '实际命中可连击攻击时积累连影与影势；复制攻击不会再次积累。', effect: { shadowCombo: 1 } }, trial: trials('sword_shadow', '断塔剑师·无声剑客', '在转火与连击之间守住剑势。', ['piercing_thrust', 'sweeping_slash'], [44, 22, 63, 18, 57, 43]) },
+  { code: 'titan', name: '泰坦', baseProfession: '战士', role: '高生命低防御 / 三回合伤势', mentor: { code: 'mentor_titan', name: '磐躯', title: '承界者' }, passive: { code: 'passive_titan_burden', name: '泰坦之躯', description: '最大生命提高 32%，双防各降低 18%；普通战斗伤害的最终生命损失进入三回合伤势队列。', effect: { hpPct: 32, physicalDefensePct: -18, magicDefensePct: -18, deferredHpLoss: 1 } }, trial: trials('titan', '承界者·磐躯', '在伤势到期前守住需要保护的人。', ['heavy_strike', 'shield_bash_player'], [79, 27, 61, 18, 23, 29]) },
+  { code: 'spirit_summoner', name: '唤灵师', baseProfession: '法师', role: '三灵位协作 / 持续支援', mentor: { code: 'mentor_summoner_mia', name: '栖羽', title: '灵契引路人' }, passive: { ...originalAdvancedProfessions.find(entry => entry.code === 'spirit_summoner')!.passive }, trial: { ...originalAdvancedProfessions.find(entry => entry.code === 'spirit_summoner')!.trial, name: '灵契引路人·栖羽', description: '攻、防、疗三道灵息同时回应，考验你能否分清每一种呼唤。' } },
+  { code: 'master_thief', name: '妙手', baseProfession: '盗贼', role: '有限偷窃 / 信息优势', mentor: { code: 'mentor_master_thief', name: '拾潮', title: '暗舱客' }, passive: { code: 'passive_thief_opening', name: '妙手身法', description: '命中与闪避属性各提高 5%；闪避、背后命中与验货可积累有限手感。', effect: { evasionPct: 5, accuracyPct: 5, handfeel: 1 } }, trial: trials('master_thief', '暗舱客·拾潮', '分辨可以取走的战利品和必须放下的东西。', ['backstab', 'smoke_screen'], [39, 29, 46, 23, 68, 59]) },
+  { code: 'holy_knight', name: '圣骑', baseProfession: '牧师', role: '姿态切换 / 团队守护', mentor: { code: 'mentor_holy_knight', name: '雪槐', title: '断旗守誓者' }, passive: { code: 'passive_paladin_vow', name: '圣甲体魄', description: '最大生命提高 10%，双防各提高 6%，并获得少量控制抗性；代承每个伤害事件最多一次。', effect: { hpPct: 10, physicalDefensePct: 6, magicDefensePct: 6, controlResistancePct: 6 } }, trial: trials('holy_knight', '断旗守誓者·雪槐', '在勇誓与守誓之间作出选择。', ['shield_bash_player', 'blessing_aegis'], [61, 45, 38, 36, 28, 33]) },
+  { code: 'stringblade', name: '弦刃使', baseProfession: '射手', role: '远近交替 / 混合锋线', mentor: { code: 'mentor_stringblade', name: '弦陌', title: '折返猎人' }, passive: { code: 'passive_stringblade_flow', name: '弦刃身法', description: '速度与命中属性各提高 6%；远近攻击成功交替后获得一次强化。', effect: { speedPct: 6, accuracyPct: 6, alternation: 1 } }, trial: trials('stringblade', '折返猎人·弦陌', '以远近交替的节奏跨过猎道。', ['sharpshoot_snipe', 'backstab'], [42, 26, 39, 22, 62, 54]) }
+];
+
+export const mapHiddenAdvancedProfessionByCode = (code: string) => mapHiddenAdvancedProfessions.find(entry => entry.code === code);
 
 export const advancedProfessionByCode = (code: string) => worldTreeAdvancedProfessions.find(entry => entry.code === code);
 export const advancedProfessionByMentor = (code: string) => worldTreeAdvancedProfessions.find(entry => entry.mentor.code === code);
@@ -111,7 +144,7 @@ const hiddenPassiveBalances: Record<string, { description: string; effect: Recor
 };
 
 /** 角色展示用目录；隐藏委托不进入世界树导师与公开职业任务目录。 */
-export const registeredAdvancedProfessionByCode = (code: string) => advancedProfessionByCode(code) ?? (() => {
+export const registeredAdvancedProfessionByCode = (code: string) => advancedProfessionByCode(code) ?? mapHiddenAdvancedProfessionByCode(code) ?? (() => {
   const profession = hiddenProfessions.find(entry => entry.code === code);
   const balance = hiddenPassiveBalances[code];
   return profession ? { code: profession.code, name: profession.name, role: profession.role,
@@ -148,14 +181,20 @@ export const hasBattleOnlyAdvancedPassiveEffect = (professionCode: string | null
 
 /**
  * 二转完成时授予的职业主动技能。导师试炼的 skillCodes 仅用于 Boss，不能拿来当作玩家奖励。
- * 唤灵师的五个召唤灵契由 spirit-summoner.config.ts 额外并入，因此这里保留方案中的四个指令技。
+ * 唤灵师旧五项单独召唤灵契只保留历史定义；现行职业也仅授予这里的四项主动技。
  */
 export const advancedProfessionActiveSkillCodes: Record<string, string[]> = {
   bulwark_guard: ['bulwark_shieldwall_advance', 'bulwark_vicarious_guard', 'bulwark_immovable_mountain', 'bulwark_bastion_judgment'],
   war_lord: ['warlord_quake_command', 'warlord_break_formation', 'warlord_triumph_banner', 'warlord_hundred_battle_sweep'],
   ironbreaker: ['ironbreaker_armor_rend', 'ironbreaker_breaking_pursuit', 'ironbreaker_gap_execution', 'ironbreaker_steel_flash'],
   elementalist: ['elementalist_cinderfrost_cycle', 'elementalist_storm_chain', 'elementalist_fourfold_resonance', 'elementalist_sky_sequence'],
-  spirit_summoner: ['summoner_contract_spirit', 'summoner_spirit_tether', 'summoner_returning_veil', 'summoner_star_pact'],
+  arcane_magister: ['arcane_precast', 'arcane_bolt_high', 'arcane_pierce', 'arcane_meteor'],
+  spirit_summoner: ['summoner_reassign', 'summoner_call', 'summoner_command', 'summoner_triad'],
+  sword_shadow: ['sword_shadow_polish', 'sword_shadow_sheathe', 'sword_shadow_chase', 'sword_shadow_storm'],
+  titan: ['titan_anchor', 'titan_defer', 'titan_quake', 'titan_unbroken'],
+  master_thief: ['thief_appraise', 'thief_pickpocket', 'thief_exploit', 'thief_loaded'],
+  holy_knight: ['paladin_rally', 'paladin_switch_vow', 'paladin_charge', 'paladin_sanctuary'],
+  stringblade: ['stringblade_draw', 'stringblade_shot', 'stringblade_slash', 'stringblade_cross'],
   spellblade: ['spellblade_arcane_thrust', 'spellblade_phase_guard', 'spellblade_spellbreak_whirl', 'spellblade_starfire_duel'],
   nightblade: ['nightblade_shadow_mark', 'nightblade_gap_stab', 'nightblade_crescent_throat', 'nightblade_silent_finale'],
   venomancer: ['venomancer_serpent_kiss', 'venomancer_corrosion_mist', 'venomancer_venom_burst', 'venomancer_thousand_throat'],
@@ -171,13 +210,13 @@ export const advancedProfessionActiveSkillCodes: Record<string, string[]> = {
 for (const profession of hiddenProfessions) advancedProfessionActiveSkillCodes[profession.code] = hiddenSkills.filter(skill => skill.profession === profession.code).map(skill => skill.code);
 export const activeSkillCodesForAdvancedProfession = (professionCode: string) => advancedProfessionActiveSkillCodes[professionCode] ?? [];
 
-export const advancedProfessionPassiveCodes = new Set([...worldTreeAdvancedProfessions.map(profession => profession.passive.code), ...hiddenProfessions.map(profession => hiddenPassiveCode(profession.code))]);
+export const advancedProfessionPassiveCodes = new Set([...worldTreeAdvancedProfessions, ...mapHiddenAdvancedProfessions].map(profession => profession.passive.code).concat(hiddenProfessions.map(profession => hiddenPassiveCode(profession.code))));
 export const advancedInheritanceSkillCode = (professionCode: string) => `inheritance_${professionCode}`;
-export const advancedProfessionInheritanceCodes = new Set([...worldTreeAdvancedProfessions, ...hiddenProfessions].map(profession => advancedInheritanceSkillCode(profession.code)));
+export const advancedProfessionInheritanceCodes = new Set([...worldTreeAdvancedProfessions, ...mapHiddenAdvancedProfessions, ...hiddenProfessions].map(profession => advancedInheritanceSkillCode(profession.code)));
 export const isAdvancedProfessionSkillCode = (code: string) => advancedProfessionPassiveCodes.has(code)
   || advancedProfessionInheritanceCodes.has(code)
   || Object.values(advancedProfessionActiveSkillCodes).some(codes => codes.includes(code))
-  || ['spirit_call_ember', 'spirit_call_tide', 'spirit_call_bark', 'spirit_call_gale', 'spirit_call_moon'].includes(code);
+  || legacySpiritSummonerSkillCodes.includes(code);
 
 export const isCachedAdvancedPassiveEffect = (skillCode: string, effectKey: string) => advancedProfessionPassiveCodes.has(skillCode) && isCachedAdvancedPassiveKey(effectKey);
 
@@ -200,6 +239,7 @@ export const inheritancePassiveDefinitions: Record<string, InheritancePassiveDef
   ironbreaker: { professionCode: 'ironbreaker', name: '临界识破', ownDescription: '每个目标每回合首次被自身单体技能命中时，若目标带破甲、易伤或追猎，本次暴击率修正+12%并施加裂口2回合；下一名不同队友的单体技能直击暴击率修正+15%、忽略对应防御12%后消耗裂口。', studyDescription: '满足前置时施加裂口；下一名不同队友的单体技能直击暴击率修正+8%后消耗。', own: [12, 15, 12], study: [8] },
   elementalist: { professionCode: 'elementalist', name: '异相共鸣', ownDescription: '成功施加一种此前不存在的冰、火、风、雷印记或对应元素减益时施加导相2回合；下一次不同元素技能直击最终伤害+12%，施法者恢复4%最大MP；若为元素使本人再获得20奥术。', studyDescription: '施加简化导相；下一次不同元素技能直击最终伤害+8%，施法者恢复2%最大MP后消耗。', own: [12, 4, 20], study: [8, 2] },
   spirit_summoner: { professionCode: 'spirit_summoner', name: '灵契余荫', ownDescription: '每回合首次有队友在生命低于60%时获得直接治疗、生命护盾或减伤壁垒，将其标记为灵荫；场上有存活灵时，回合结束该队友恢复3%最大生命，生命最低的灵恢复12%最大生命，唤灵师获得15灵契。', studyDescription: '每回合首次有生命低于50%的队友获得治疗、护盾或壁垒时，为其施加6%最大生命的生命护盾1回合。', own: [3, 12, 15], study: [6] },
+  arcane_magister: { professionCode: 'arcane_magister', name: '奥术回路', ownDescription: '中高位奥术成功施放时按一次行动累积奥术负荷；满值后由下一次高阶奥术消耗，不因多段、暴击或投影重复获得。', studyDescription: '此传承只随本职生效。', own: [100], study: [] },
   spellblade: { professionCode: 'spellblade', name: '攻势换挡', ownDescription: '技能直击造成伤害后，下一次有效治疗、生命护盾、减伤壁垒或友方增益强度+20%；支援生效后，下一次技能直击最终伤害+12%、忽略对应防御10%。每回合最多完成一轮。', studyDescription: '每回合首次完成伤害到支援时，支援效果+12%；随后下一次技能直击最终伤害+8%，无防御穿透。', own: [20, 12, 10], study: [12, 8] },
   nightblade: { professionCode: 'nightblade', name: '低光狩猎', ownDescription: '每目标每回合首次技能直击生命不高于45%或带自身追猎的目标时，最终直击伤害+16%，并进入退影：下次自身回合前首次受到技能直击伤害-20%；击杀时额外清除自身一个普通减益。', studyDescription: '每目标每回合首次符合低血条件时，最终直击伤害+8%，并获得一次10%退影减伤；无追猎扩展和击杀净化。', own: [16, 20], study: [8, 10] },
   venomancer: { professionCode: 'venomancer', name: '渗毒判断', ownDescription: '自身剧毒存在后，同回合由任意队友成功施加另一种新减益时获得蚀媒；下一次不同角色技能直击立刻结算一层剧毒下回合伤害的35%，普通敌人不超过最大生命1.2%，Boss不超过0.45%。', studyDescription: '对带持续伤害的目标成功施加另一种新减益时，下一次不同队友技能直击最终伤害+6%。', own: [35, 1.2, .45], study: [6] },
@@ -225,10 +265,22 @@ const hiddenInheritanceValues: Record<string, number[]> = {
   tactician: [25, 20]
 };
 for (const profession of hiddenProfessions) inheritancePassiveDefinitions[profession.code] = { professionCode: profession.code, name: profession.inheritance, ownDescription: hiddenInheritanceText[profession.code], studyDescription: '此传承只随本职生效。', own: hiddenInheritanceValues[profession.code], study: [] };
+for (const profession of mapHiddenAdvancedProfessions) {
+  if (inheritancePassiveDefinitions[profession.code]) continue;
+  const description = ({
+    sword_shadow: '连影传承：实际命中可连击攻击后，按最终速度、最终命中和连影层数计算连击概率；复制不递归，也不重复自身效果。',
+    titan: '巨躯负荷：普通战斗伤害的最终生命损失进入接下来三个自身回合的伤势队列。',
+    master_thief: '读隙：成功闪避、背后命中或验货后积累有限手感；不直接生成可偷物品。',
+    holy_knight: '守誓体魄：勇誓与守誓互斥，守誓代承对单次伤害事件至多发生一次。',
+    stringblade: '交错本能：远程与近战攻击成功交替后获得小幅强化，连续同类动作不触发。'
+  } as Record<string, string>)[profession.code];
+  const inheritanceName = ({ sword_shadow: '连影传承', titan: '巨躯负荷', master_thief: '读隙', holy_knight: '守誓体魄', stringblade: '交错本能' } as Record<string, string>)[profession.code];
+  inheritancePassiveDefinitions[profession.code] = { professionCode: profession.code, name: inheritanceName, ownDescription: description, studyDescription: '此传承只随本职生效。', own: [], study: [] };
+}
 export const inheritancePassiveFor = (professionCode: string) => inheritancePassiveDefinitions[professionCode];
 
 /** 两项本职能力均登记为绑定技能；传承数值仍由职业结算，技能记录不再次叠加效果。 */
-export const advancedBoundSkillDefinitions = [...worldTreeAdvancedProfessions, ...hiddenProfessions].flatMap(entry => {
+export const advancedBoundSkillDefinitions = [...worldTreeAdvancedProfessions, ...mapHiddenAdvancedProfessions, ...hiddenProfessions].flatMap(entry => {
   const profession = registeredAdvancedProfessionByCode(entry.code)!;
   const inheritance = inheritancePassiveFor(entry.code)!;
   return [

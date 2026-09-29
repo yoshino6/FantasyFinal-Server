@@ -45,6 +45,7 @@ export type RuleHooks = {
   areaDamage?: (targets: RuleUnit[], hit: (target: RuleUnit) => Promise<void>) => Promise<void>;
   beforeAction?: (unit: RuleUnit) => Promise<void>;
   beforeHpDamage?: (unit: RuleUnit, damage: number) => Promise<number>;
+  deferHpDamage?: (unit: RuleUnit, damage: number, source?: RuleUnit) => Promise<number>;
   afterDamage?: (unit: RuleUnit, damage: number, shieldBroken: boolean, originalShield?:RuleStatus, source?: RuleUnit, absorbed?: number) => Promise<void>;
   absorb: (unit: RuleUnit, damage: number) => Promise<number>;
   legacyEffects: (unit: RuleUnit) => RuleStatus[];
@@ -425,7 +426,8 @@ export class CombatRules {
     const legacyAbsorbed = await this.hooks.absorb(target, Math.max(0, damage - absorbed));
     if(shieldMultiplier>1&&legacyAbsorbed>0)await this.hooks.absorb(target,legacyAbsorbed*(shieldMultiplier-1));
     const pendingHpDamage = await hiddenBeforeDamage(this, target, Math.max(0, damage - absorbed - legacyAbsorbed));
-    const hpDamage = talentHpDamage(target, await this.hooks.beforeHpDamage?.(target, pendingHpDamage) ?? pendingHpDamage);
+    const finalHpDamage = talentHpDamage(target, await this.hooks.beforeHpDamage?.(target, pendingHpDamage) ?? pendingHpDamage);
+    const hpDamage = await this.hooks.deferHpDamage?.(target, finalHpDamage, source) ?? finalHpDamage;
     const hpBefore = target.hp;
     target.hp = Math.max(0, target.hp - hpDamage);
     target.state.memory.opening_actual_damage=hpBefore-target.hp;

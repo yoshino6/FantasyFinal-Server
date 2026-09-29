@@ -1,0 +1,53 @@
+/** 七条新二转路线的四项主动技能。数值为首轮平衡起点，战斗机制由技能代码分支结算。 */
+export type NewAdvancedSkillDefinition = {
+  code: string;
+  name: string;
+  category: 'physical' | 'magic' | 'utility';
+  tier: '中位' | '上位';
+  damageType: string;
+  skillKind: string;
+  element: string;
+  rangeType: string;
+  targetScope: string;
+  manaCost: number;
+  cooldownTurns: number;
+  power: number;
+  description: string;
+};
+
+export const newAdvancedSkillDefinitions: NewAdvancedSkillDefinition[] = [
+  { code: 'sword_shadow_polish', name: '拭剑', category: 'utility', tier: '中位', damageType: '无', skillKind: '剑技', element: '无', rangeType: '自身', targetScope: '自身', manaCost: 190, cooldownTurns: 5, power: 0, description: '消耗一次行动，3回合内自身可连击主技能的直接攻击威力提高15%，忽略目标对应防御15%；两项提升分别结算，不能叠加预存。' },
+  { code: 'sword_shadow_sheathe', name: '持鞘', category: 'utility', tier: '中位', damageType: '无', skillKind: '剑技', element: '无', rangeType: '自身', targetScope: '自身', manaCost: 110, cooldownTurns: 3, power: 0, description: '消耗一次行动与20影势，使下一次可连击攻击额外复制1次；标记不可叠加、不可连续预存。' },
+  { code: 'sword_shadow_chase', name: '追影斩', category: 'physical', tier: '中位', damageType: '斩击', skillKind: '剑技', element: '无', rangeType: '近战', targetScope: '单体', manaCost: 110, cooldownTurns: 2, power: 115, description: '单体斩击，造成115%物理伤害；实际命中后维持连影并按连影传承判定连击。' },
+  { code: 'sword_shadow_storm', name: '剑刃风暴', category: 'physical', tier: '上位', damageType: '斩击', skillKind: '剑技', element: '无', rangeType: '近战', targetScope: '全体', manaCost: 650, cooldownTurns: 7, power: 95, description: '消耗影势，对全体敌人造成95%物理伤害；每次施放最多复制一次攻击，复制不递归。' },
+
+  { code: 'titan_anchor', name: '稳桩', category: 'utility', tier: '中位', damageType: '无', skillKind: '防护', element: '无', rangeType: '自身', targetScope: '自身', manaCost: 190, cooldownTurns: 3, power: 0, description: '消耗一次行动，2回合内提高仇恨与控制稳定性；不增加双防，不清除伤势。' },
+  { code: 'titan_defer', name: '缓伤', category: 'utility', tier: '中位', damageType: '无', skillKind: '防护', element: '无', rangeType: '自身', targetScope: '自身', manaCost: 300, cooldownTurns: 4, power: 0, description: '消耗一次行动，仅缓和下一跳伤势结算压力：降低15%，上限自身最大生命8%；未结算余量继续进入后续伤势，不清空队列。' },
+  { code: 'titan_quake', name: '撼地重击', category: 'physical', tier: '中位', damageType: '打击', skillKind: '重击', element: '无', rangeType: '近战', targetScope: '单体', manaCost: 110, cooldownTurns: 2, power: 110, description: '造成110%物理伤害并建立仇恨，重点在拉回承伤位置。' },
+  { code: 'titan_unbroken', name: '不灭承界', category: 'utility', tier: '上位', damageType: '无', skillKind: '防护', element: '无', rangeType: '自身', targetScope: '全体', manaCost: 650, cooldownTurns: 7, power: 0, description: '短时间维持仇恨，有限代承一名队友的单体伤害，并限制一次伤势结算峰值；未偿伤势仍需在后续回合结算。' },
+
+  { code: 'arcane_precast', name: '预构奥式', category: 'utility', tier: '中位', damageType: '无', skillKind: '奥术', element: '无', rangeType: '自身', targetScope: '自身', manaCost: 190, cooldownTurns: 4, power: 0, description: '消耗一次行动，下一次奥术主技能威力提高12%，该技能魔力消耗增加20%；不提高奥术负荷获取。' },
+  { code: 'arcane_bolt_high', name: '奥术矢', category: 'magic', tier: '中位', damageType: '奥术', skillKind: '奥术', element: '无', rangeType: '远程', targetScope: '单体', manaCost: 110, cooldownTurns: 2, power: 145, description: '高成本单体奥术，造成145%奥术伤害；不触发四系元素反应。' },
+  { code: 'arcane_pierce', name: '法则贯穿', category: 'magic', tier: '中位', damageType: '奥术', skillKind: '奥术', element: '无', rangeType: '远程', targetScope: '单体', manaCost: 300, cooldownTurns: 4, power: 185, description: '造成185%奥术伤害并有限忽略目标魔法防御；不是无视防御的真实伤害。' },
+  { code: 'arcane_meteor', name: '星陨秘典', category: 'magic', tier: '上位', damageType: '奥术', skillKind: '奥术', element: '无', rangeType: '远程', targetScope: '单体', manaCost: 650, cooldownTurns: 8, power: 235, description: '消耗奥术负荷，对单体造成235%奥术伤害；高魔力与长冷却限制连续施放。' },
+
+  { code: 'summoner_reassign', name: '灵位调度', category: 'utility', tier: '中位', damageType: '无', skillKind: '灵契', element: '无', rangeType: '自身', targetScope: '自身', manaCost: 110, cooldownTurns: 2, power: 0, description: '消耗一次行动，调整一只现存灵体的攻、守、疗职责并强化其下一次职责行动；不立即追加灵体行动。' },
+  { code: 'summoner_call', name: '召灵', category: 'utility', tier: '中位', damageType: '无', skillKind: '灵契', element: '无', rangeType: '自身', targetScope: '自身', manaCost: 150, cooldownTurns: 1, power: 0, description: '从灵体池选择一只占据空灵位；已有灵位越多，召唤成本越高。五种旧灵契不再各占一个新职业技能槽。' },
+  { code: 'summoner_command', name: '灵契指令', category: 'utility', tier: '中位', damageType: '无', skillKind: '灵契', element: '无', rangeType: '自身', targetScope: '自身', manaCost: 220, cooldownTurns: 3, power: 0, description: '指定一只现存灵体执行一次攻击、治疗或护根职责；受每回合灵体行动预算限制。' },
+  { code: 'summoner_triad', name: '三灵共鸣', category: 'utility', tier: '上位', damageType: '无', skillKind: '灵契', element: '无', rangeType: '自身', targetScope: '全体', manaCost: 650, cooldownTurns: 7, power: 0, description: '至少两只不同职责灵体在场时，各回应一次；每只灵体只结算一次，不递归触发资源或额外行动。' },
+
+  { code: 'thief_appraise', name: '验货', category: 'utility', tier: '中位', damageType: '无', skillKind: '手法', element: '无', rangeType: '远程', targetScope: '单体', manaCost: 110, cooldownTurns: 2, power: 0, description: '查看当前目标的合法可偷池与警觉状态，为下一次探囊消除未知目标惩罚；不可偷目标仍不可偷。' },
+  { code: 'thief_pickpocket', name: '探囊', category: 'utility', tier: '中位', damageType: '无', skillKind: '手法', element: '无', rangeType: '近战', targetScope: '单体', manaCost: 190, cooldownTurns: 3, power: 0, description: '尝试从普通怪物一次性合法战利品池偷取低价值物资；失败提高警觉，成功记录同一掉落账本并获得手感。' },
+  { code: 'thief_exploit', name: '借势', category: 'physical', tier: '中位', damageType: '刺击', skillKind: '手法', element: '无', rangeType: '近战', targetScope: '单体', manaCost: 190, cooldownTurns: 3, power: 105, description: '造成105%物理伤害；借助闪避或背后命中争取下一次探囊窗口与短时命中收益，不复制掉落。' },
+  { code: 'thief_loaded', name: '满载而归', category: 'physical', tier: '上位', damageType: '刺击', skillKind: '手法', element: '无', rangeType: '近战', targetScope: '单体', manaCost: 650, cooldownTurns: 7, power: 165, description: '消耗本场已获得的合法赃物与手感，造成中等伤害或转为短时战斗增益；不产生额外战利品。' },
+
+  { code: 'paladin_rally', name: '圣盾号令', category: 'utility', tier: '中位', damageType: '无', skillKind: '誓约', element: '光', rangeType: '自身', targetScope: '全体', manaCost: 190, cooldownTurns: 3, power: 0, description: '按当前勇誓或守誓给予全队小额攻击命中或双防抗控增益；守誓可标记一名队友接受一次有限代承。' },
+  { code: 'paladin_switch_vow', name: '换誓', category: 'utility', tier: '中位', damageType: '无', skillKind: '誓约', element: '光', rangeType: '自身', targetScope: '自身', manaCost: 110, cooldownTurns: 2, power: 0, description: '消耗誓约切换勇誓和守誓；旧姿态临时强化立即失效，同回合不可享有两种姿态。' },
+  { code: 'paladin_charge', name: '守誓冲锋', category: 'physical', tier: '中位', damageType: '打击', skillKind: '誓约', element: '光', rangeType: '近战', targetScope: '单体', manaCost: 110, cooldownTurns: 2, power: 120, description: '造成120%物理伤害并建立仇恨；守誓号令已标记队友时准备一次有限单体代承。' },
+  { code: 'paladin_sanctuary', name: '圣域誓约', category: 'utility', tier: '上位', damageType: '无', skillKind: '誓约', element: '光', rangeType: '自身', targetScope: '全体', manaCost: 650, cooldownTurns: 7, power: 0, description: '短时提升全队攻防并附带一次有限守护；同名增益取高值，每个伤害事件最多转移一次。' },
+
+  { code: 'stringblade_draw', name: '收弦', category: 'utility', tier: '中位', damageType: '无', skillKind: '弦刃', element: '无', rangeType: '自身', targetScope: '自身', manaCost: 110, cooldownTurns: 2, power: 0, description: '消耗一次行动准备下一次远近交替强化；不直接造成伤害或额外增加行动。' },
+  { code: 'stringblade_shot', name: '穿心矢', category: 'physical', tier: '中位', damageType: '刺击', skillKind: '射击', element: '无', rangeType: '远程', targetScope: '单体', manaCost: 110, cooldownTurns: 1, power: 135, description: '远程单体射击，造成135%物理伤害，作为远近交替的远程起手。' },
+  { code: 'stringblade_slash', name: '贴身断弦', category: 'physical', tier: '中位', damageType: '斩击', skillKind: '弦刃', element: '无', rangeType: '近战', targetScope: '单体', manaCost: 110, cooldownTurns: 1, power: 125, description: '近战单体斩击，造成125%物理伤害；接在有效远射后获得有限强化。' },
+  { code: 'stringblade_cross', name: '弦锋交错', category: 'physical', tier: '上位', damageType: '刺击', skillKind: '弦刃', element: '无', rangeType: '近战', targetScope: '单体', manaCost: 650, cooldownTurns: 7, power: 210, description: '消耗锋线造成210%物理伤害；已完成的远近交替可追加一次非递归伤害，追加段不另取资源。' }
+];

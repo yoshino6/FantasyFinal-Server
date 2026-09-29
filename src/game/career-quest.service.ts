@@ -81,6 +81,10 @@ export const advancedProfessionMainQuest = async (qqUserId: string): Promise<Mai
       actions: routes.map(mentorAction)
     };
   }
+  if (active.profession_code === 'spirit_summoner') return {
+    title: '【主线·二转·旧唤灵师试炼】',
+    description: '原世界树唤灵师试炼已迁为地图隐藏传承，旧任务进度保留，但不能再从公开导师继续。你可以前往世界树的其他公开导师，确认中断旧任务后改走其试炼；若日后通过感知发现隐藏导师，也可在导师当前格明确选择转换。旧任务不会自动换成隐藏资格。'
+  };
   if (!profession) throw new Error('当前二转试炼的职业配置不存在。');
   const huntAction = character.region_code === profession.route.regionCode
     ? { label: '[寻找 试炼目标]', command: '/寻怪' }
