@@ -3,9 +3,10 @@ import { Format, useEvent, useRoute } from 'alemonjs';
 import { useGameMessage as useMessage } from '../game/use-game-message';
 import { buyOddWorkshopItem, consultDungeonAtGuild, consultDungeonAtWorkshop, dungeonSecretProgress, entranceStory } from '../game/dungeon-quest.service';
 import { messageFormat } from '../game/message';
+import { addStoryIllustration } from '../game/story-illustrations';
 
 const chapterFormat = (stage: number, text: string, buttons: ReturnType<typeof Format.createButtonGroup>) => Format.create()
-  .addMarkdown(Format.createMarkdown().addTitle(`地下的秘密（${stage}/6）`).addNewline().addNewline().addBlockquote(text))
+  .addMarkdown(addStoryIllustration(Format.createMarkdown().addTitle(`地下的秘密（${stage}/6）`).addNewline().addNewline(),`dungeon.secret.${stage===2?'guild':stage===3?'workshop':stage===4?'purchase':'entrance'}`).addBlockquote(text))
   .addButtonGroup(buttons);
 
 export const dungeonSecretGuildHandler = async () => {

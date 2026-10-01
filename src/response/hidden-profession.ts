@@ -5,6 +5,7 @@ import { becomeHiddenProfession, hiddenQuestAction, hiddenQuestTopic, hiddenQues
 import { hiddenSkills } from '../game/hidden-profession.config';
 import { hiddenQuestRetry } from '../game/hidden-quest.story';
 import { observeHiddenQuestMonster } from '../game/adventure.service';
+import { addStoryIllustration } from '../game/story-illustrations';
 
 const returnCommand: Record<string, string> = { magical_scholar: '/糖水屋', weapon_master: '/铁匠铺', inventor: '/异工坊', tactician: '/百味书屋' };
 export const hiddenObservationHandler = async () => {
@@ -21,6 +22,7 @@ export const appendHiddenQuestButton = async (buttons: ReturnType<typeof Format.
 export const hiddenProfessionFormat = async (user: string, code: string, receipt = '') => {
   const data = await hiddenQuestView(user, code), { profession, story, quest, evidence } = data;
   const md = Format.createMarkdown().addTitle(data.qualified ? `关于 ${profession.name}` : `${profession.mentor}·${quest?.name ?? '私人委托'}`).addNewline().addNewline();
+  if(story&&!data.qualified)addStoryIllustration(md,`hidden_quest.${profession.code}.${data.stage}`);
   const buttons = Format.createButtonGroup();
   const command = (action: string, choice?: number) => `/委托操作 ${profession.code} ${data.revision} ${action}${choice === undefined ? '' : ` ${choice}`}`;
   if (receipt) md.addBlockquote(receipt).addNewline().addNewline();
@@ -73,7 +75,7 @@ export const hiddenProfessionHandler = (operation: 'view' | 'action' | 'become' 
     if (operation === 'story') {
       const data = await hiddenQuestView(user, code);
       if (!data.story) throw new Error('委托已全部完成。');
-      await message.send({ format: Format.create().addMarkdown(Format.createMarkdown().addTitle(data.quest?.name ?? '私人委托').addNewline().addNewline().addText(data.story.scene).addNewline().addNewline().addBlockquote(data.story.speech)).addButtonGroup(Format.createButtonGroup().addRow().addButton('返回工作台', `/店内委托 ${code}`, { type: 'command', autoEnter: true })) });
+      await message.send({ format: Format.create().addMarkdown(addStoryIllustration(Format.createMarkdown().addTitle(data.quest?.name ?? '私人委托').addNewline().addNewline(),`hidden_quest.${data.profession.code}.${data.stage}`).addText(data.story.scene).addNewline().addNewline().addBlockquote(data.story.speech)).addButtonGroup(Format.createButtonGroup().addRow().addButton('返回工作台', `/店内委托 ${code}`, { type: 'command', autoEnter: true })) });
       return;
     }
     if (operation === 'become') {

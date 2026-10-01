@@ -5,10 +5,11 @@ import { battleStatus } from '../game/adventure.service';
 import { aevierTour } from '../game/worldtree-witness-content';
 import { continueAevierChallenge, continueWorldtreeTour, enterEternalArena, eternalArenaView, leaveEternalArena, startAesonDuel, startAevierChallenge } from '../game/worldtree-witness.service';
 import { battleStartFormat } from './adventure';
+import { addStoryIllustration } from '../game/story-illustrations';
 
 type Scene={kind:'tour'|'challenge';stage:number;total:number;title:string;text:string};
 export const worldtreeWitnessFormat=(scene:Scene)=>{
-  const md=Format.createMarkdown().addTitle(`${scene.kind==='tour'?'初章':'主线'}·${scene.title}（${scene.stage}/${scene.total}）`).addNewline().addNewline().addText(scene.text).addNewline().addNewline();
+  const md=addStoryIllustration(Format.createMarkdown().addTitle(`${scene.kind==='tour'?'初章':'主线'}·${scene.title}（${scene.stage}/${scene.total}）`).addNewline().addNewline(),`worldtree.aevier_${scene.kind==='tour'?'tour':'challenge'}.${scene.stage}`).addText(scene.text).addNewline().addNewline();
   if(scene.kind==='tour'&&scene.stage===2)md.addText('**【获得地图】世界树草原环带**').addNewline().addNewline();
   const buttons=Format.createButtonGroup().addRow();
   if(scene.stage<scene.total)buttons.addButton('继续',`/世界树见证 ${scene.kind==='tour'?'游览':'邀约'} ${scene.stage}`,{type:'command',autoEnter:true,style:'blue'});

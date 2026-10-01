@@ -1,0 +1,389 @@
+{
+  "version": 1,
+  "groups": [
+    "registration.last_moment",
+    "registration.aqua",
+    "registration.eris",
+    "registration.heaven",
+    "opening.S03",
+    "opening.M01",
+    "opening.M02",
+    "opening.A01",
+    "opening.F01",
+    "opening.F02",
+    "opening.F03",
+    "opening.A01.eris",
+    "forest.town",
+    "forest.guild",
+    "hidden_quest.magical_scholar",
+    "hidden_quest.weapon_master",
+    "hidden_quest.inventor",
+    "hidden_quest.tactician",
+    "advanced.bulwark_guard",
+    "advanced.war_lord",
+    "advanced.ironbreaker",
+    "advanced.elementalist",
+    "advanced.spellblade",
+    "advanced.arcane_magister",
+    "advanced.nightblade",
+    "advanced.venomancer",
+    "advanced.trickster_ranger",
+    "advanced.saint_healer",
+    "advanced.aegis_priest",
+    "advanced.sharpshooter",
+    "advanced.gunner",
+    "advanced.ranger_warden",
+    "advanced.dawn_inquisitor",
+    "map_hidden.sword_shadow",
+    "map_hidden.titan",
+    "map_hidden.spirit_summoner",
+    "map_hidden.master_thief",
+    "map_hidden.holy_knight",
+    "map_hidden.stringblade",
+    "floating.tour",
+    "floating.rescue",
+    "floating.thanks",
+    "worldtree.aevier_tour",
+    "worldtree.aevier_challenge",
+    "heart.mirror",
+    "gratitude.pear",
+    "rescue.pear",
+    "dungeon.secret",
+    "alchemy.creation",
+    "barrier.sky",
+    "evolution.library",
+    "floating.barrier",
+    "opening.job.1",
+    "opening.job.2",
+    "opening.job.3"
+  ],
+  "imageCount": 56,
+  "excludedGroups": [
+    {
+      "key": "opening.C02",
+      "status": "supported-existing-save"
+    },
+    {
+      "key": "forest.guide",
+      "status": "supported-existing-save"
+    },
+    {
+      "key": "lamplight.private.F01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.private.F02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.private.F03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.private.M01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.private.M02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.M03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.R01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.R02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.R03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.S01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.S02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.private.S03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.D01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.D02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.D03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.H01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.H02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.H03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.I01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.I02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.I03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.W01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.W02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.W03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.private.A01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.A02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.A03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.C01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.private.C02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.C03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.T01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.T02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.T03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.E01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.E02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.E03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.B01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.B02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.B03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.Y01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.Y02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.supported.Y03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.S01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.S02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.S03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.D01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.D02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.D03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.H01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.H02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.H03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.I01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.I02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.I03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.W01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.W02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.W03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.B01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.B02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.B03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.Y01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.Y02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.legacy.Y03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.local.baina_town",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.local.world_tree",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.local.floating_leaf_town",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.local.snowlamp_hollow",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.local.frost_dragon_inn",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.local.sleepwhale_market",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.join",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.world.01",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.world.02",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.world.03",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.world.04",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.world.05",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.world.06",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.world.07",
+      "status": "retired"
+    },
+    {
+      "key": "lamplight.world.08",
+      "status": "retired"
+    }
+  ],
+  "evidence": [
+    "server/src/game/opening-world.config.ts: openingStartRouteCodes has 7 routes",
+    "server/src/database/lamplight.ts: initializeLamplight disables all dedicated locations",
+    "server/src/index.ts: no lamplight command registrations",
+    "server/src/game/opening.service.ts: current F03 enters old forest_guide at stage 5"
+  ]
+}

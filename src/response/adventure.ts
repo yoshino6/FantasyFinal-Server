@@ -13,6 +13,7 @@ import { addNpcAffinity, adjustMovementStep, battleStatus, blockedDungeonDirecti
 import { bossRandomEffectSummary } from '../game/adventure.service';
 import { autoBattleConfig, isFullPartyAutoBattle, pendingPartyAutoBattleActions } from '../game/auto-battle.service';
 import { messageFormat, npcInteractionMarkdown } from '../game/message';
+import { addStoryIllustration, storyIllustrationFor } from '../game/story-illustrations';
 import { homePanel, leaveHome } from '../game/home.service';
 import { currentLocationText, movedLocationText, outsidePanel, panelButtons } from './panel';
 import pearGuideImage from '../assets/game/story/pear-guide.png';
@@ -301,7 +302,7 @@ const evolutionBarrierFormat = () => Format.create()
     .addText('去冒险者公会问问吧。'))
   .addButtonGroup(Format.createButtonGroup().addRow().addButton('任务', '/任务', { type: 'command', autoEnter: true, style: 'blue' }));
 const chapterFormat = (stage: number, text: string) => {
-  const markdown = Format.createMarkdown().addTitle(`初章·包容之镇（${stage}/5）`).addNewline().addNewline().addText(text);
+  const markdown = addStoryIllustration(Format.createMarkdown().addTitle(`初章·包容之镇（${stage}/5）`).addNewline().addNewline(), `forest.guide.${stage}`).addText(text);
   const buttons = Format.createButtonGroup().addRow();
   if (stage === 1) buttons.addButton('循声而去', '/初章 包容之镇 循声而去', { type: 'command', autoEnter: true, style: 'blue' });
   if (stage === 2) buttons.addButton('上前打招呼', '/初章 包容之镇 上前打招呼', { type: 'command', autoEnter: true, style: 'blue' });
@@ -323,8 +324,10 @@ const townArrivalFormat = async (stage: number, text: string, completed = false,
   if (completed) return null;
   const hasInlinePearImage = guildStory && stage === 1 && isPublicImageUrl(gameAssetUrls.pearGuideImageUrl);
   const markdown = Format.createMarkdown().addTitle(guildStory ? `初临·梨子带路（${stage}/3）` : stage===1?'初临·城门（1/6）':`初临·百纳镇（${stage}/6）`).addNewline().addNewline();
+  const sceneKey=`forest.${guildStory?'guild':'town'}.${stage}`;
+  addStoryIllustration(markdown,sceneKey);
   // 只有 Markdown 内嵌的公开图片，才能与正文和按钮作为同一条 QQ 消息发送。
-  if (hasInlinePearImage) markdown.addImage(gameAssetUrls.pearGuideImageUrl, { width: 320, height: 213 }).addNewline().addNewline();
+  if (hasInlinePearImage && !storyIllustrationFor(sceneKey)) markdown.addImage(gameAssetUrls.pearGuideImageUrl, { width: 320, height: 213 }).addNewline().addNewline();
   markdown.addText(text);
   const label = guildStory ? '继续' : stage === 6 ? '挥手告别' : '继续';
   if (hasInlinePearImage) {
@@ -1006,7 +1009,8 @@ const showMoveResult = async (message: any, qqUserId: string, result: any) => {
   }
   if (result.kind === 'main_quest_story') {
     const leaf = await (await import('../game/floating-leaf.service')).floatingLeafOrigin(qqUserId);
-    const markdown = Format.createMarkdown().addTitle(leaf ? `主线·密林救援（${result.questChapter}/4）` : `主线·失踪的少女（${result.questChapter}/7）`).addNewline().addNewline().addText(result.text);
+    const sceneKey=leaf?`floating.rescue.${Number(result.questChapter)===1?'trail':Number(result.questChapter)===2?'found':Number(result.questChapter)===3?'drums':'battle'}`:`rescue.pear.${Number(result.questChapter)===4?'clue':Number(result.questChapter)===5?'found':Number(result.questChapter)===6?'king':'suppress'}`;
+    const markdown = addStoryIllustration(Format.createMarkdown().addTitle(leaf ? `主线·密林救援（${result.questChapter}/4）` : `主线·失踪的少女（${result.questChapter}/7）`).addNewline().addNewline(),sceneKey).addText(result.text);
     const buttons = Format.createButtonGroup().addRow();
     if (result.questClue) buttons.addButton('查看线索', '/任务', { type: 'command', autoEnter: true, style: 'blue' });
     else buttons.addButton('继续前进', '/继续深处阴谋', { type: 'command', autoEnter: true, style: 'blue' });
@@ -1147,7 +1151,7 @@ export const continueStoryHandler = async () => {
     const story = await continueForestArrival(event.current.UserId);
     const storyFormat = await townArrivalFormat(story.stage, story.text, story.completed, story.chapter === 'guild');
     if (storyFormat) {
-      if (story.chapter === 'guild' && story.stage === 1 && !isPublicImageUrl(gameAssetUrls.pearGuideImageUrl)) {
+      if (story.chapter === 'guild' && story.stage === 1 && !storyIllustrationFor('forest.guild.1') && !isPublicImageUrl(gameAssetUrls.pearGuideImageUrl)) {
         try { await message.send({ format: Format.create().addImage(await pearGuideImageBuffer()) }); }
         catch (error) { logger.warn({ err: error, pearGuideImage: pearGuideImagePath }, 'load pear guide image failed'); }
       }

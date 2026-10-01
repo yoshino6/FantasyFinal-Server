@@ -1,4 +1,5 @@
 import type { Format } from 'alemonjs';
+import { appStoryIllustrationFromFormat, type AppStoryIllustration } from '../game/story-illustrations';
 
 export type AppButton = { label: string; command: string };
 /** 可跨进程传输的 Alemon Format 节点。Format.value 本身是 JSON 数据，不能把构建器实例传给桌宠或 QQ。 */
@@ -44,6 +45,8 @@ export type AppMessage = {
   markdown?: string;
   /** 原始 Format.value，QQ 端会按 Alemon 节点重新构造 Format。 */
   format?: AppFormatNode[];
+  /** 网页使用随前端打包的剧情插图；原 Format 仍保留真实 QQ 图库地址。 */
+  storyImage?: AppStoryIllustration;
   buttons: AppButton[];
   petReply?: string;
   mapData?: AppMapData;
@@ -247,18 +250,13 @@ export const formatValueToButtons = (formatValue: unknown): AppButton[] => {
   return buttons;
 };
 
-export const formatToAppMessage = (format: Format, petReply?: string): AppMessage => ({
-  text: formatValueToText(format.value),
-  markdown: formatValueToMarkdown(format.value),
-  format: Array.isArray(format.value) ? format.value as AppFormatNode[] : undefined,
-  buttons: formatValueToButtons(format.value),
-  petReply
-});
+export const formatToAppMessage = (format: Format, petReply?: string): AppMessage => formatValueToAppMessage(format.value, petReply);
 
 export const formatValueToAppMessage = (formatValue: unknown, petReply?: string): AppMessage => ({
   text: formatValueToText(formatValue),
   markdown: formatValueToMarkdown(formatValue),
   format: Array.isArray(formatValue) ? formatValue as AppFormatNode[] : undefined,
+  storyImage: appStoryIllustrationFromFormat(formatValue),
   buttons: formatValueToButtons(formatValue),
   petReply
 });

@@ -1,0 +1,328 @@
+{
+  "version": 1,
+  "scenes": [
+    {
+      "sceneKey": "hidden_quest.magical_scholar.1",
+      "groupKey": "hidden_quest.magical_scholar",
+      "sceneKeys": [
+        "hidden_quest.magical_scholar.1"
+      ],
+      "file": "side-hidden_quest-magical_scholar-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "晴儿在薄荷香的糖水屋拿出红蓝线量杯",
+      "npcIdentity": "qinger",
+      "source": "server/src/game/hidden-quest.story.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04cea6d00.webp",
+      "original": "artwork/story/side-hidden_quest-magical_scholar-v2.png"
+    },
+    {
+      "sceneKey": "hidden_quest.weapon_master.1",
+      "groupKey": "hidden_quest.weapon_master",
+      "sceneKeys": [
+        "hidden_quest.weapon_master.1"
+      ],
+      "file": "side-hidden_quest-weapon_master-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "小北在炉火旁听辨相邻武器的颤鸣",
+      "npcIdentity": "xiaobei",
+      "source": "server/src/game/hidden-quest.story.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04d03f634.webp",
+      "original": "artwork/story/side-hidden_quest-weapon_master-v2.png"
+    },
+    {
+      "sceneKey": "hidden_quest.inventor.1",
+      "groupKey": "hidden_quest.inventor",
+      "sceneKeys": [
+        "hidden_quest.inventor.1"
+      ],
+      "file": "side-hidden_quest-inventor-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "唯薇安从工作台下探头收起地面的电线",
+      "npcIdentity": "vivian",
+      "source": "server/src/game/hidden-quest.story.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04d1bd274.webp",
+      "original": "artwork/story/side-hidden_quest-inventor-v2.png"
+    },
+    {
+      "sceneKey": "hidden_quest.tactician.1",
+      "groupKey": "hidden_quest.tactician",
+      "sceneKeys": [
+        "hidden_quest.tactician.1"
+      ],
+      "file": "side-hidden_quest-tactician-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "洛文将护具残片与新材料分开，核对旧护送地图",
+      "npcIdentity": "lowen",
+      "source": "server/src/game/hidden-quest.story.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04d3693b8.webp",
+      "original": "artwork/story/side-hidden_quest-tactician-v2.png"
+    },
+    {
+      "sceneKey": "evolution.library.hall",
+      "groupKey": "evolution.library",
+      "sceneKeys": [
+        "evolution.library.hall"
+      ],
+      "file": "side-evolution-library-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "世界树图书馆的接待树灵将厚重目录推至桌前",
+      "npcIdentity": "tree-spirit",
+      "source": "server/src/response/evolution-quest.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04d525947.webp",
+      "original": "artwork/story/side-evolution-library-v2.png"
+    },
+    {
+      "sceneKey": "alchemy.creation.lesson",
+      "groupKey": "alchemy.creation",
+      "sceneKeys": [
+        "alchemy.creation.lesson"
+      ],
+      "file": "side-alchemy-creation-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "晴儿打开卷角手记，用阵纹讲解点灵与育成",
+      "npcIdentity": "qinger",
+      "source": "server/src/game/alchemy-creation-quest.service.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04d697f89.webp",
+      "original": "artwork/story/side-alchemy-creation-v2.png"
+    },
+    {
+      "sceneKey": "barrier.sky.return",
+      "groupKey": "barrier.sky",
+      "sceneKeys": [
+        "barrier.sky.return"
+      ],
+      "file": "side-barrier-sky-v2.webp",
+      "width": 1672,
+      "height": 940,
+      "alt": "晴儿接过天空粉尘，细光从指缝间流过",
+      "npcIdentity": "qinger",
+      "source": "server/src/response/alchemist.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04d86a053.webp",
+      "original": "artwork/story/side-barrier-sky-v2.png"
+    },
+    {
+      "sceneKey": "worldtree.aevier_tour.1",
+      "groupKey": "worldtree.aevier_tour",
+      "sceneKeys": [
+        "worldtree.aevier_tour.1"
+      ],
+      "file": "side-worldtree-aevier_tour-v2.webp",
+      "width": 1672,
+      "height": 940,
+      "alt": "艾薇儿在根桥甜果摊前抱紧纸袋，看见前来解围的旅人",
+      "npcIdentity": "aevier",
+      "source": "server/src/game/worldtree-witness-content.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04da31bc9.webp",
+      "original": "artwork/story/side-worldtree-aevier_tour-v2.png"
+    },
+    {
+      "sceneKey": "worldtree.aevier_challenge.1",
+      "groupKey": "worldtree.aevier_challenge",
+      "sceneKeys": [
+        "worldtree.aevier_challenge.1"
+      ],
+      "file": "side-worldtree-aevier_challenge-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "艾薇儿在晨光中的根桥挥手，带着折成小太阳的纸条",
+      "npcIdentity": "aevier",
+      "source": "server/src/game/worldtree-witness-content.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04dbb8b28.webp",
+      "original": "artwork/story/side-worldtree-aevier_challenge-v2.png"
+    },
+    {
+      "sceneKey": "heart.WQ-001",
+      "groupKey": "heart.mirror",
+      "sceneKeys": [],
+      "file": "side-heart-mirror-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "问心倒影呈现雨后花桥松板、药车与等候的孩子",
+      "npcIdentity": "none",
+      "source": "server/src/game/heart-question-content.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04dd4fd5b.webp",
+      "original": "artwork/story/side-heart-mirror-v2.png"
+    },
+    {
+      "sceneKey": "rescue.pear.found",
+      "groupKey": "rescue.pear",
+      "sceneKeys": [
+        "rescue.pear.found"
+      ],
+      "file": "side-rescue-pear-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "梨子喵背靠断木守住林中包围，短刃已有缺口",
+      "npcIdentity": "pear",
+      "source": "server/src/game/main-quest.service.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04e066297.webp",
+      "original": "artwork/story/side-rescue-pear-v2.png"
+    },
+    {
+      "sceneKey": "dungeon.secret.entrance",
+      "groupKey": "dungeon.secret",
+      "sceneKeys": [
+        "dungeon.secret.entrance"
+      ],
+      "file": "side-dungeon-secret-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "雷恩在结界石门前提醒旅人留意迷宫的痕迹",
+      "npcIdentity": "raine",
+      "source": "server/src/game/dungeon-quest.service.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04e1ed8de.webp",
+      "original": "artwork/story/side-dungeon-secret-v2.png"
+    },
+    {
+      "sceneKey": "floating.barrier.dust",
+      "groupKey": "floating.barrier",
+      "sceneKeys": [
+        "floating.barrier.dust"
+      ],
+      "file": "side-floating-barrier-v2.webp",
+      "width": 1672,
+      "height": 940,
+      "alt": "观风台木叶纹路升起天空粉尘，映出无形边界",
+      "npcIdentity": "none",
+      "source": "server/src/game/floating-leaf.service.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04e373688.webp",
+      "original": "artwork/story/side-floating-barrier-v2.png"
+    },
+    {
+      "sceneKey": "opening.job.1.intro",
+      "groupKey": "opening.job.1",
+      "sceneKeys": [
+        "opening.job.1.intro",
+        "opening.job.1.middle",
+        "opening.job.1.done"
+      ],
+      "file": "side-opening-job-1-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "补给员将两只药箱分开，递出分类标签",
+      "npcIdentity": "supply-clerk",
+      "source": "server/src/game/opening-progress.service.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04e501f75.webp",
+      "original": "artwork/story/side-opening-job-1-v2.png"
+    },
+    {
+      "sceneKey": "opening.job.2.intro",
+      "groupKey": "opening.job.2",
+      "sceneKeys": [
+        "opening.job.2.intro",
+        "opening.job.2.middle",
+        "opening.job.2.done"
+      ],
+      "file": "side-opening-job-2-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "工匠在候车长凳旁放下直尺，请旅人先查明不平处",
+      "npcIdentity": "carpenter",
+      "source": "server/src/game/opening-progress.service.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04e67691c.webp",
+      "original": "artwork/story/side-opening-job-2-v2.png"
+    },
+    {
+      "sceneKey": "opening.job.3.intro",
+      "groupKey": "opening.job.3",
+      "sceneKeys": [
+        "opening.job.3.intro",
+        "opening.job.3.middle",
+        "opening.job.3.done"
+      ],
+      "file": "side-opening-job-3-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "接引口值守将新路牌与地图逐项核对",
+      "npcIdentity": "gate-steward",
+      "source": "server/src/game/opening-progress.service.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04e81ad0c.webp",
+      "original": "artwork/story/side-opening-job-3-v2.png"
+    },
+    {
+      "sceneKey": "floating.tour.1",
+      "groupKey": "floating.tour",
+      "sceneKeys": [
+        "floating.tour.1"
+      ],
+      "file": "side-floating-tour-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "菲萝缇在浮叶镇花桥上摊开镇图，郑重道歉",
+      "npcIdentity": "philoti",
+      "source": "server/src/game/floating-leaf-content.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04e9bb157.webp",
+      "original": "artwork/story/side-floating-tour-v2.png"
+    },
+    {
+      "sceneKey": "floating.rescue.return",
+      "groupKey": "floating.rescue",
+      "sceneKeys": [
+        "floating.rescue.return"
+      ],
+      "file": "side-floating-rescue-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "菲萝缇确认孩子们平安归来，握着折痕深深的路线图",
+      "npcIdentity": "philoti",
+      "source": "server/src/game/floating-leaf-content.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04eb612d4.webp",
+      "original": "artwork/story/side-floating-rescue-v2.png"
+    },
+    {
+      "sceneKey": "floating.thanks.1",
+      "groupKey": "floating.thanks",
+      "sceneKeys": [
+        "floating.thanks.1"
+      ],
+      "file": "side-floating-thanks-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "菲萝缇乘接驳舱赴世界树，换上便服展开地图",
+      "npcIdentity": "philoti",
+      "source": "server/src/game/floating-leaf-content.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04ecd5c9e.webp",
+      "original": "artwork/story/side-floating-thanks-v2.png"
+    },
+    {
+      "sceneKey": "gratitude.pear.5",
+      "groupKey": "gratitude.pear",
+      "sceneKeys": [
+        "gratitude.pear.5"
+      ],
+      "file": "side-gratitude-pear-v4.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "梨子喵在万叶联市将嫩芽形护符递给旅人",
+      "npcIdentity": "pear",
+      "source": "server/src/game/girl-gratitude.service.ts",
+      "styleVersion": "konosuba-light-2d-v2",
+      "original": "artwork/story/side-gratitude-pear-v4.png"
+    }
+  ]
+}

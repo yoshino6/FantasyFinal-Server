@@ -2,9 +2,10 @@ import { Format, useEvent, useRoute } from 'alemonjs';
 import { useGameMessage as useMessage } from '../game/use-game-message';
 import { messageFormat } from '../game/message';
 import { activeHeartQuestion, answerHeartQuestion, openHeartQuestion, openQueuedHeartQuestion, skipHeartQuestion, type HeartTicket } from '../game/heart-question.service';
+import { addStoryIllustration } from '../game/story-illustrations';
 
 export const heartQuestionFormat = (ticket: HeartTicket) => {
-  const md = Format.createMarkdown().addTitle(`窥尘问心·${ticket.card.title}`).addNewline().addNewline()
+  const md = addStoryIllustration(Format.createMarkdown().addTitle(`窥尘问心·${ticket.card.title}`).addNewline().addNewline(),`heart.${ticket.card.code}`)
     .addText(`升至 Lv${ticket.toLevel} 时映入心中的片段：`).addNewline().addNewline()
     .addText(ticket.card.prompt).addNewline().addNewline();
   ticket.card.options.forEach((choice, index) => md.addBlockquote(`${'ABCDEF'[index]}. ${choice.text}`).addNewline());

@@ -2,6 +2,7 @@ import { currentSecondaryShop } from '../game/secondary-shop-context';
 import { secondaryShopFormat } from './secondary-shop';
 import { appendHiddenQuestButton } from './hidden-profession';
 import { alchemyCreationQuest, alchemyCreationQuestTitle, learnAlchemyCreation } from '../game/alchemy-creation-quest.service';
+import { addStoryIllustration } from '../game/story-illustrations';
 import { Format, useEvent, useRoute } from 'alemonjs';
 import { useGameMessage as useMessage } from '../game/use-game-message';
 import { acceptAlchemistQuest, activatePersonalAlchemy, activateSweetshopAlchemy, alchemistProgress, alchemistQuest, alchemyFormulaList, alchemyMaterials, alchemyState, bulkPurificationPreview, claimAlchemistQuest, clearAlchemyMaterial, clearPurificationMaterial, deleteAlchemyFormula, executeBulkPurification, executePurification, loadAlchemyFormula, purificationMaterials, purificationState, renameAlchemyFormula, saveAlchemyFormula, selectAlchemyMaterial, selectPurificationMaterial } from '../game/alchemist.service';
@@ -120,7 +121,7 @@ export const alchemistBarrierHandler = async () => {
   } catch (error) { await message.send({ format: messageFormat('无法询问', error instanceof Error ? error.message : '请稍后重试。') }); }
 };
 
-const skyDustAdviceFormat = () => Format.create().addMarkdown(Format.createMarkdown().addTitle('关于 无形的禁锢').addNewline().addNewline().addBlockquote('晴儿接过天空粉尘，任由细微的光芒从指缝间流过。\n“果然如此……它回应的是你对这方世界的感知，而不是药性。去吧，别把它当成材料；试着用心去窥探它所映照的天空。”')).addButtonGroup(Format.createButtonGroup().addRow().addButton('打开背包', '/背包 材料', { type: 'command', autoEnter: true, style: 'blue' }));
+const skyDustAdviceFormat = () => Format.create().addMarkdown(addStoryIllustration(Format.createMarkdown().addTitle('关于 无形的禁锢').addNewline().addNewline(),'barrier.sky.return').addBlockquote('晴儿接过天空粉尘，任由细微的光芒从指缝间流过。\n“果然如此……它回应的是你对这方世界的感知，而不是药性。去吧，别把它当成材料；试着用心去窥探它所映照的天空。”')).addButtonGroup(Format.createButtonGroup().addRow().addButton('打开背包', '/背包 材料', { type: 'command', autoEnter: true, style: 'blue' }));
 
 export const alchemistProfessionSelectHandler = async () => {
   const [event] = useEvent(); const [message] = useMessage();
@@ -297,7 +298,7 @@ export const alchemyCreationLessonHandler = async () => {
   const [event] = useEvent(); const [message] = useMessage();
   try {
     const lesson = await learnAlchemyCreation(event.current.UserId);
-    const markdown = Format.createMarkdown().addTitle(alchemyCreationQuestTitle).addNewline().addNewline().addBlockquote(lesson.story).addNewline().addNewline()
+    const markdown = addStoryIllustration(Format.createMarkdown().addTitle(alchemyCreationQuestTitle).addNewline().addNewline(),'alchemy.creation.lesson').addBlockquote(lesson.story).addNewline().addNewline()
       .addText(lesson.alreadyLearned ? '晴儿陪你重温了点灵与育成的要领。' : '支线完成，已学会点灵与育成。').addNewline()
       .addText('灵枢素体需要四级解构师构造，可委托其他玩家制作或在交易行购入。');
     await message.send({ format: Format.create().addMarkdown(markdown).addButtonGroup(Format.createButtonGroup().addRow()

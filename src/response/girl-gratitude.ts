@@ -2,9 +2,10 @@ import { Format, useEvent } from 'alemonjs';
 import { useGameMessage as useMessage } from '../game/use-game-message';
 import { continueGirlGratitude, girlGratitudeStage, receiveGirlGratitudeGift, returnToBainaTown, startGirlGratitude, teleportToWorldTree } from '../game/girl-gratitude.service';
 import { messageFormat } from '../game/message';
+import { addStoryIllustration } from '../game/story-illustrations';
 
 const fail = async (message: any, title: string, error: unknown) => message.send({ format: messageFormat(title, error instanceof Error ? error.message : '请稍后重试。') });
-const story = (chapter: number, text: string, buttons: ReturnType<typeof Format.createButtonGroup>) => Format.create().addMarkdown(Format.createMarkdown().addTitle(`主线·少女的谢意（${chapter}/6）`).addNewline().addNewline().addText(text)).addButtonGroup(buttons);
+const story = (chapter: number, text: string, buttons: ReturnType<typeof Format.createButtonGroup>) => Format.create().addMarkdown(addStoryIllustration(Format.createMarkdown().addTitle(`主线·少女的谢意（${chapter}/6）`).addNewline().addNewline(),`gratitude.pear.${chapter}`).addText(text)).addButtonGroup(buttons);
 
 export const girlGratitudeStartHandler = async () => {
   const [event] = useEvent(); const [message] = useMessage();

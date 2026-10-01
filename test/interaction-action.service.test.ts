@@ -41,6 +41,30 @@ test('only a public Core result can issue opaque buttons, without exposing comma
   assert.equal(JSON.stringify(issued).includes('确认注销'), false);
 });
 
+test('a signed story choice keeps the story open, and its page exit uses the executed destination', async () => {
+  const service = createCoreInteractionActionService({
+    resolveQqUser: async s => `app_${s.playerId}`,
+    publicCoreCommands: () => [{ command: '注册' }],
+    executeCore: async request => request.command === '/选择恩赐 A01'
+      ? result({ label: '打开面板', command: '/面板' })
+      : result()
+  });
+  const issued = await service.issue({
+    session: session(1), sessionToken: 'session-credential-1', originCommand: '/注册',
+    execution: result({ label: '选择恩赐', command: '/选择恩赐 A01' })
+  });
+  assert.equal(issued.presentation, 'story');
+  const choice = issued.messages[0]!.buttons[0]!;
+  const created = await service.execute({ session: session(1), sessionToken: 'session-credential-1',
+    actionId: choice.actionId, revision: choice.revision, idempotencyKey: 'story-gift' });
+  assert.equal(created.presentation, 'story');
+  const exit = created.messages[0]!.buttons[0]!;
+  const page = await service.execute({ session: session(1), sessionToken: 'session-credential-1',
+    actionId: exit.actionId, revision: exit.revision, idempotencyKey: 'story-exit' });
+  assert.equal(page.presentation, 'page');
+  assert.equal(page.destination, 'explore');
+});
+
 test('web market writes are not issued as Core buttons or executed through an old action', async () => {
   let executions = 0;
   const service = createCoreInteractionActionService({

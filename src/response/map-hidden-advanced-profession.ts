@@ -7,6 +7,7 @@ import { activeSkillCodesForAdvancedProfession } from '../game/advanced-professi
 import { newAdvancedSkillDefinitions } from '../game/map-hidden-advanced-skills.config';
 import { mapHiddenAdvancedMentorAction, mapHiddenAdvancedMentorView, senseMapHiddenAdvancedMentor } from '../game/map-hidden-advanced-profession.service';
 import { battleStartFormat } from './adventure';
+import { addStoryIllustration } from '../game/story-illustrations';
 
 const fail = async (message: any, error: unknown) => message.send({ format: messageFormat('隐藏导师', error instanceof Error ? error.message : '请稍后重试。') });
 
@@ -15,8 +16,7 @@ export const mapHiddenAdvancedMentorFormat = async (user: string, code: string, 
   const { profession, quest, mission, qualified, currentCode, retrainRemainingSeconds } = view;
   const stage = Number(quest?.stage ?? 0);
   const revision = Number(quest?.revision ?? 0);
-  const markdown = Format.createMarkdown().addTitle(`${profession.mentor.title}·${profession.mentor.name}`).addNewline().addNewline()
-    .addBlockquote(mission.lesson).addNewline().addNewline();
+  const markdown = addStoryIllustration(Format.createMarkdown().addTitle(`${profession.mentor.title}·${profession.mentor.name}`).addNewline().addNewline(),`map_hidden.${profession.code}.${stage===6&&!qualified?'trial':'lesson'}`).addBlockquote(mission.lesson).addNewline().addNewline();
   if (receipt) markdown.addText(receipt).addNewline().addNewline();
   const buttons = Format.createButtonGroup();
   const action = (verb: string) => `/隐藏导师操作 ${profession.code} ${revision} ${verb}`;

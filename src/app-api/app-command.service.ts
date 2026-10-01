@@ -14,6 +14,7 @@ import {
   forestGuideAdvance,
   forestGuideChoice,
   forestGuideProgress,
+  forestGuideSnapshot,
   inventoryView,
   learnSkill,
   leaveParty,
@@ -50,6 +51,7 @@ import { appSessionQqUser, type AppSession } from '../game/app-channel.service';
 import { experienceRequiredForLevel } from '../game/constants';
 import { registeredAdvancedProfessionByCode } from '../game/advanced-profession.config';
 import type { NegotiationCommand, NegotiationResult, NegotiationView } from '../game/negotiation.service';
+import { appStoryIllustrationFor } from '../game/story-illustrations';
 
 const openingText = async (view: any, reply = '我陪你把这段初行走完。'): Promise<AppMessage> =>
   formatToAppMessage((await import('../game/opening-message')).openingFormat(view), reply);
@@ -78,7 +80,7 @@ const forestChapterText = (stage: number, text: string): AppMessage => {
     buttons.push({ label: '加入队伍', command: '/初章 包容之镇 加入' });
     buttons.push({ label: '婉拒并问路', command: '/初章 包容之镇 婉拒并询问城镇位置' });
   }
-  return plainAppMessage(`【初章·包容之镇（${stage}/5）】\n\n${text}`, buttons, '我陪你把这段相遇走完。');
+  return { ...plainAppMessage(`【初章·包容之镇（${stage}/5）】\n\n${text}`, buttons, '我陪你把这段相遇走完。'), storyImage: appStoryIllustrationFor(`forest.guide.${stage}`) };
 };
 
 const townArrivalText = (story: Awaited<ReturnType<typeof continueForestArrival>>): AppMessage => {
@@ -88,9 +90,9 @@ const townArrivalText = (story: Awaited<ReturnType<typeof continueForestArrival>
       { label: '查看状态', command: '/状态' }
     ], '公会就在眼前，先进去登记吧。');
   }
-  return plainAppMessage(`【${story.chapter === 'guild' ? '初临·梨子带路' : '初临·百纳镇'}（${story.stage}）】\n\n${story.text}`, [
+  return { ...plainAppMessage(`【${story.chapter === 'guild' ? '初临·梨子带路' : '初临·百纳镇'}（${story.stage}）】\n\n${story.text}`, [
     { label: '继续剧情', command: '/继续剧情' }
-  ], '跟紧脚步，很快就到公会了。');
+  ], '跟紧脚步，很快就到公会了。'), storyImage: appStoryIllustrationFor(`forest.${story.chapter === 'guild' ? 'guild' : 'town'}.${story.stage}`) };
 };
 
 const continueJourneyText = async (user: string): Promise<AppMessage> => {
@@ -101,13 +103,8 @@ const continueJourneyText = async (user: string): Promise<AppMessage> => {
   }
   const guide = await forestGuideProgress(user);
   if (guide?.status === 'met' && guide.stage >= 1 && guide.stage <= 4) {
-    const pages: Record<number, string> = {
-      1: '你在林中听见了兵刃碰撞的声音。那声响被湿润的枝叶过滤得断断续续，却仍清晰地指向前方。是有人在附近战斗吗？',
-      2: '你拨开最后一丛沾着露水的灌木，望见有三人正擦拭着武器。他们循着动静也发现了你。',
-      3: '战士把盾牌背回身后，笑着做了自我介绍。他们说自己接下了讨伐森林史莱姆的悬赏，正循着痕迹搜寻。',
-      4: '他们向你说明百纳镇就在密林南方，并邀请你一起解决森林史莱姆。'
-    };
-    return forestChapterText(guide.stage, pages[guide.stage]!);
+    const snapshot = await forestGuideSnapshot(user);
+    if (snapshot) return forestChapterText(snapshot.stage, snapshot.text);
   }
   if (guide?.status === 'joined' || guide?.status === 'declined') return battleText(user, []);
   const story = await continueForestArrival(user);
@@ -168,10 +165,18 @@ export type DesktopMenuGroup = {
   items: DesktopMenuItem[];
 };
 
+export type PendingAppStory = {
+  command?: string;
+  revision: string;
+  messages?: AppMessage[];
+};
+
 export type DesktopPanel = AppMessage & {
   serverTime: string;
   connection: 'online';
   inBattle: boolean;
+  /** Read-only snapshot; fetching a panel must never advance a story or move a character. */
+  pendingStory?: PendingAppStory;
   /** 当前角色的服务端采矿状态；存在时网页必须锁定交互并恢复采矿弹窗。 */
   mining?: Awaited<ReturnType<typeof resourceMiningStatus>>;
   /** 仅在存在 active combat session 时返回，避免前端误把历史战斗当成可操作战斗。 */
@@ -1444,6 +1449,28 @@ const portraitForCharacter = (character: NonNullable<Awaited<ReturnType<typeof g
   };
 };
 
+/** Only reads committed progress. In particular, /继续剧情 must not be run while restoring a page. */
+export const pendingAppStory = async (qqUserId: string, hasCharacter: boolean, inBattle = false): Promise<PendingAppStory | undefined> => {
+  if (!hasCharacter) return { command: '/注册', revision: 'registration' };
+  if (inBattle) return undefined;
+  const { openingStatus } = await import('../game/opening.service');
+  const opening = await openingStatus(qqUserId);
+  if (opening && opening.state !== 'armed' && opening.state !== 'completed') {
+    return {
+      revision: `opening:${opening.route}:${opening.revision}:${opening.state}:${opening.page}`,
+      messages: [await openingText(opening)]
+    };
+  }
+  const forest = await forestGuideSnapshot(qqUserId);
+  if (!forest) return undefined;
+  const message = forest.chapter === 'forest'
+    ? forestChapterText(forest.stage, forest.text)
+    : forest.status === 'awaiting_arrival'
+      ? plainAppMessage(forest.text, [{ label: '前往百纳镇', command: '/继续剧情' }])
+      : townArrivalText({ ...forest, chapter: forest.chapter, completed: false });
+  return { revision: `forest:${forest.status}:${forest.stage}`, messages: [message] };
+};
+
 export const appQuickPanel = async (session: AppSession): Promise<DesktopPanel> => {
   const qqUserId = await appSessionQqUser(session);
   const [character, travel, encounter, battle, nearby, movement, inventory, autoPve, autoPvp, mining] = await Promise.all([
@@ -1484,6 +1511,7 @@ export const appQuickPanel = async (session: AppSession): Promise<DesktopPanel> 
     }))
   } : undefined;
   const inBattle = Array.isArray(battle.targets) && battle.targets.length > 0;
+  const pendingStory = await pendingAppStory(qqUserId, Boolean(character), inBattle);
   const activeBattle = inBattle ? battle as Awaited<ReturnType<typeof battleStatus>> : undefined;
   const summary = character ? {
     name: character.name,
@@ -1550,6 +1578,7 @@ export const appQuickPanel = async (session: AppSession): Promise<DesktopPanel> 
     serverTime: new Date().toISOString(),
     connection: 'online',
     inBattle,
+    ...(pendingStory ? { pendingStory } : {}),
     ...(activeBattle ? { battle: activeBattle } : {}),
     ...(mining ? { mining } : {}),
     ...(movement ? { movement } : {}),

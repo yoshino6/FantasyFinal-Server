@@ -65,7 +65,9 @@ const view=(row:StoryRow):OpeningView=>{
   const state:OpeningState=row.state==='reading'&&Number(row.page_index)>=ps.length-1?'choice':row.state;
   let choices=route.choices.map(c=>({code:c.code,label:c.label}));
   if(row.route_code==='A01'&&flags.eris)choices=[{code:'A',label:'接受厄里斯的安全返还'},{code:'B',label:'带事故函去地上的女神办事桌'},{code:'C',label:'留下厄里斯的个人受理印'}];
-  return{route:row.route_code,title:page.title,state,revision:Number(row.revision),text:openingNarrativeText(page.text),page:pageIndex+1,pages:ps.length,branch:row.branch_code,
+  const illustrationKey=row.state==='armed'?undefined:row.state==='arrival'&&row.destination_code!==route.destination?`opening.reroute.${row.destination_code}`:
+    `opening.${row.route_code}${row.route_code==='A01'&&flags.eris&&['reading','choice','branch'].includes(row.state)?'.eris':''}${['branch','arrival','lesson','completed'].includes(row.state)&&row.branch_code?`.${row.branch_code}`:''}.${row.state==='choice'?'reading':row.state==='completed'?'arrival':row.state}.${row.state==='completed'?(choice?.arrival??route.arrival).length:pageIndex+1}`;
+  return{route:row.route_code,title:page.title,state,revision:Number(row.revision),text:openingNarrativeText(page.text),page:pageIndex+1,pages:ps.length,branch:row.branch_code,illustrationKey,
     choices:state==='choice'?choices:[],action:row.state==='lesson'?choice!.task:undefined,reward:row.reward_claimed?String(flags.rewardName??choice?.rewardName):undefined,destination:row.reward_claimed?openingHubs[row.destination_code].name:undefined,
     forestBattleChoice:row.route_code==='F03'&&flags.forestBattlePending?(flags.forestBattlePending==='join'?'join':'depart'):undefined};
 };

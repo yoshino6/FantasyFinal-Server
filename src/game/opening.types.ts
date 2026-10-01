@@ -44,4 +44,5 @@ export type OpeningView = {
   reward?: string; destination?: string; worldChanged?: boolean;
   forestBattleChoice?: 'join' | 'depart';
   person?: { code: string; name: string };
+  illustrationKey?: string;
 };

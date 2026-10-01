@@ -1,5 +1,6 @@
 import { Format, ResultCode } from 'alemonjs';
 import { gifts, type GiftCategory } from './constants';
+import { addStoryIllustration } from './story-illustrations';
 
 type MessageSender = {
   send: (params?: any) => Promise<Array<{ code: number }>>;
@@ -38,9 +39,13 @@ const storyScenes = [
 ];
 
 export const randomStoryText = () => `\n\n${storyScenes[Math.floor(Math.random() * storyScenes.length)]}`;
+export const registrationStorySceneKey = (text: string) => {
+  const index = storyScenes.findIndex(scene => text.includes(scene));
+  return index < 0 ? undefined : `registration.story.${String(index + 1).padStart(2, '0')}`;
+};
 
 export const storyFormat = (text = randomStoryText()) => Format.create()
-  .addMarkdown(Format.createMarkdown().addTitle('序章·最后一幕（1/6）').addText(text))
+  .addMarkdown(addStoryIllustration(Format.createMarkdown().addTitle('序章·最后一幕（1/6）'), registrationStorySceneKey(text) ?? '').addText(text))
   .addButtonGroup(Format.createButtonGroup().addRow().addButton('继续', '/注册 继续', { type: 'command', autoEnter: true }));
 
 export const audienceText = '\n\n再次睁开眼时，你正站在一片没有尽头的幽暗空间。\n远处只有一张座椅，一名蓝发少女端坐其上，头顶流转着柔和的神辉。\n她似乎正在等你开口。';

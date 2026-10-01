@@ -5,6 +5,7 @@ import { craftCharacterId, createCraftRequest, craftRequestFor, completeCraftReq
 import { registeredAdvancedProfessionByCode } from '../game/advanced-profession.config';
 import { advancedProfessionOverview, advanceAdvancedProfessionStageInTransaction,
   beginAdvancedProfessionInTransaction, submitAdvancedProfessionProofInTransaction } from '../game/advanced-profession.service';
+import { appStoryIllustrationFor } from '../game/story-illustrations';
 
 export type AdvancedQuestAction = 'accept' | 'switch_quest' | 'submit_story' | 'submit_proof';
 type Snapshot = { action: AdvancedQuestAction; professionCode: string; quote: Record<string, unknown>; idempotencyKey: string };
@@ -65,7 +66,8 @@ export const advancedProfessionStatus = async (qqUserId: string) => {
         second: { title: profession.second.title, story: stage >= 2 ? profession.second.story : null,
           target: profession.second.targetText, requiredKills: profession.second.requiredKills,
           materialCount: profession.second.materialCount, materialOwned: ownedMaterial } } : null,
-      completed: completed?.profession_code === profession.code, availableActions, blockedReason
+      completed: completed?.profession_code === profession.code, availableActions, blockedReason,
+      storyImage: completed?.profession_code===profession.code||stage>=1?appStoryIllustrationFor(`advanced.${profession.code}.${completed?.profession_code===profession.code?'success':stage===1?'first':stage===2?'second':'trial'}`):undefined
     };
   });
   return { character: { level: Number(character.level), baseProfession: character.profession },

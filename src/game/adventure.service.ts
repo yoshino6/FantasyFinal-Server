@@ -2787,17 +2787,19 @@ const recordForestGuideStage = (connection: PoolConnection, characterId: number,
   actorRole, outcome: '推进', summary, detail: { storyCode: 'forest_guide', status, stage, ...detail }
 });
 
+const forestGuidePages: Record<number, { action: string; text?: string }> = {
+    1: { action: '循声而去', text: '你在林中听见了兵刃碰撞的声音。那声响被湿润的枝叶过滤得断断续续，却仍清晰地指向前方。是有人在附近战斗吗？' },
+    2: { action: '上前打招呼', text: '你拨开最后一丛沾着露水的灌木，望见有三人正擦拭着武器。\n为首的青年手持剑盾，红发少女指尖还缠着未散的火星，白袍少女则正替受伤的同伴施展治愈术。\n\n他们循着动静也发现了你。' },
+    3: { action: '我也不清楚，睁开眼时就在这儿了', text: '战士把盾牌背回身后，笑着做了自我介绍。\n他叫莱昂，是一名战士；那位红发少女伊芙是法师；白袍的希娅则是牧师。\n\n他们说自己接下了讨伐森林史莱姆的悬赏，正循着痕迹搜寻。\n莱昂打量着我身上未干的露水，略显困惑：\n\n“你为什么会一个人在这种地方？”\n\n我沉默片刻，不好坦白自己转生到这里的事实。' },
+    4: { action: '', text: '“我也不清楚，”\n我如此回答，\n“我今早一睁开眼，就已经在这片森林里了。”\n\n他们三人交换了一个复杂的眼神,没有继续追问\n希娅轻声说，百纳镇就在密林南方————那是一座接纳各族居民的包容小镇，半兽人、矮人、精灵与人类都能在那里找到落脚处。\n\n莱昂朝森林深处扬了扬下巴：“我们先解决那只史莱姆。你要不要和我们一起？结束后，我们带你去百纳镇。”' }
+  };
+
 export const forestGuideAdvance = async (qqUserId: string, action: string) => withTransaction(async connection => {
   const character = await characterFor(qqUserId);
   const [rows] = await connection.execute<(RowDataPacket & { status: string; stage: number })[]>('SELECT status,stage FROM player_story_progress WHERE character_id=? AND story_code=\'forest_guide\' FOR UPDATE', [character.id]);
   const story = rows[0]; if (!story || story.status !== 'met') throw new Error('这段故事已经结束了。');
   const stage = Number(story.stage);
-  const pages: Record<number, { action: string; text?: string }> = {
-    1: { action: '循声而去' },
-    2: { action: '上前打招呼', text: '你拨开最后一丛沾着露水的灌木，望见有三人正擦拭着武器。\n为首的青年手持剑盾，红发少女指尖还缠着未散的火星，白袍少女则正替受伤的同伴施展治愈术。\n\n他们循着动静也发现了你。' },
-    3: { action: '我也不清楚，睁开眼时就在这儿了', text: '战士把盾牌背回身后，笑着做了自我介绍。\n他叫莱昂，是一名战士；那位红发少女伊芙是法师；白袍的希娅则是牧师。\n\n他们说自己接下了讨伐森林史莱姆的悬赏，正循着痕迹搜寻。\n莱昂打量着我身上未干的露水，略显困惑：\n\n“你为什么会一个人在这种地方？”\n\n我沉默片刻，不好坦白自己转生到这里的事实。' },
-    4: { action: '', text: '“我也不清楚，”\n我如此回答，\n“我今早一睁开眼，就已经在这片森林里了。”\n\n他们三人交换了一个复杂的眼神,没有继续追问\n希娅轻声说，百纳镇就在密林南方————那是一座接纳各族居民的包容小镇，半兽人、矮人、精灵与人类都能在那里找到落脚处。\n\n莱昂朝森林深处扬了扬下巴：“我们先解决那只史莱姆。你要不要和我们一起？结束后，我们带你去百纳镇。”' }
-  };
+  const pages = forestGuidePages;
   const page = pages[stage]; if (!page) throw new Error('故事进度异常。');
   if (page.action && action !== page.action) throw new Error('现在还不能做出这个选择。');
   if (stage < 4) {
@@ -2821,6 +2823,28 @@ export const forestGuideProgress = async (qqUserId: string) => {
   );
   return rows[0] ? { status: rows[0].status, stage: Number(rows[0].stage) } : null;
 };
+
+/** Rebuild the current story page without advancing its stage or changing the player's position. */
+export const forestGuideSnapshotFor = (progress: { status: string; stage: number } | null) => {
+  if (!progress) return null;
+  const { status, stage } = progress;
+  if (status === 'met' && forestGuidePages[stage]?.text) {
+    return { status, stage, text: forestGuidePages[stage]!.text!, chapter: 'forest' as const };
+  }
+  if (status === 'awaiting_arrival') {
+    return { status, stage, text: '森林中的战斗已经结束。莱昂、伊芙与希娅正在等你一起前往百纳镇。', chapter: 'town' as const };
+  }
+  if (status === 'arrival_story' && townArrivalScenes[stage]) {
+    return { status, stage, text: townArrivalScenes[stage]!, chapter: 'town' as const };
+  }
+  if (status === 'guild_story' && guildArrivalScenes[stage]) {
+    return { status, stage, text: guildArrivalScenes[stage]!, chapter: 'guild' as const };
+  }
+  return null;
+};
+
+export const forestGuideSnapshot = async (qqUserId: string) =>
+  forestGuideSnapshotFor(await forestGuideProgress(qqUserId));
 
 export type ResourceMiningStatus = {
   resourceId: number;

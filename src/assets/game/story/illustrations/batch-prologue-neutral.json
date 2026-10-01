@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "scenes": [
+    {
+      "sceneKey": "registration.heaven",
+      "groupKey": "registration.heaven",
+      "sceneKeys": [
+        "registration.heaven"
+      ],
+      "file": "registration-heaven-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "序章·天堂的门扉：第一人称所见的中性环境意象",
+      "source": "server/src/game/message.ts",
+      "reviewStatus": {
+        "status": "inspected",
+        "playerAbsent": true,
+        "npcAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "storyObjectMatch": true
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04ee5c8d4.webp",
+      "original": "artwork/story/registration-heaven-v2.png"
+    },
+    {
+      "sceneKey": "registration.story.12",
+      "groupKey": "registration.last_moment",
+      "sceneKeys": [
+        "registration.story.12"
+      ],
+      "file": "registration-last_moment-v3.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "序章·最后一幕：第一人称所见的中性环境意象",
+      "source": "server/src/game/message.ts",
+      "reviewStatus": {
+        "status": "inspected",
+        "playerAbsent": true,
+        "npcAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "storyObjectMatch": true
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04f02ba22.webp",
+      "original": "artwork/story/registration-last_moment-v3.png"
+    }
+  ]
+}

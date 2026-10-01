@@ -4,8 +4,9 @@ import type { RowDataPacket } from 'mysql2/promise';
 import { talentDefinitions } from './opening-content';
 import { talentGroups } from './talent.config';
 import { openingWorldFor } from './opening-state';
-import { audienceText, dangerText, destinationText, heavenText, questionText, randomStoryText } from './message';
+import { audienceText, dangerText, destinationText, heavenText, questionText, randomStoryText, registrationStorySceneKey } from './message';
 import { completedRegistrationFormat } from './registration-message';
+import { addStoryIllustration } from './story-illustrations';
 
 // 隐藏路线资格链尚未开放；默认拒绝展示，后续必须按账号已完成成就逐项授权。
 const visibleTalents=talentDefinitions.filter(skill=>skill.group!=='？？？');
@@ -74,6 +75,9 @@ export const registrationScene=async(stage:string,user:string)=>{
   else if(stage==='destination')buttons.addButton('前往天堂','/选择去向 天堂',{type:'command',autoEnter:true}).addButton('转生异世界','/选择去向 异世界',{type:'command',autoEnter:true,style:'blue'});
   else if(stage==='heaven')buttons.addButton('踏入天堂','/天堂 继续',{type:'command',autoEnter:true,style:'blue'}).addButton('还是转生异世界','/选择去向 异世界',{type:'command',autoEnter:true});
   else buttons.addButton(stage==='danger'?'看看天赋':'继续',`/注册 继续 ${stage}`,{type:'command',autoEnter:true,style:'blue'});
-  return Format.create().addMarkdown(Format.createMarkdown().addTitle(`序章·${labels[stage]??'接引'}`).addNewline().addNewline().addText(text)).addButtonGroup(buttons);
+  const sceneKey=stage==='story'?registrationStorySceneKey(text):stage==='heaven'?'registration.heaven':`registration.${saved?.goddess??world.current_goddess}.${stage}`;
+  const markdown=Format.createMarkdown().addTitle(`序章·${labels[stage]??'接引'}`).addNewline().addNewline();
+  if(sceneKey)addStoryIllustration(markdown,sceneKey);
+  return Format.create().addMarkdown(markdown.addText(text)).addButtonGroup(buttons);
   }).then(result=>result??completedRegistrationFormat(user));
 };

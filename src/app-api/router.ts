@@ -25,6 +25,7 @@ import { executeAppCommand, appQuickPanel } from './app-command.service';
 import { appCommandCategories, appCommandCatalogFor, findAppCommandById, isAppCommandAllowed, type AppCommandArgument } from './command-catalog';
 import { getCharacter } from '../game/character.service';
 import { executeCoreGameCommand, listCoreCommandCatalog } from '../core-command-bridge';
+import { coreInteractionPresentation, coreWindowCommand } from './core-interaction-presentation';
 import {
   CoreInteractionActionError,
   executeIssuedCoreInteractionAction,
@@ -489,8 +490,8 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
         }
         pendingCommandActions.delete(confirmToken);
       }
-      const coreExecutionEntry = coreEntry ?? (commandId === 'story.register'
-        ? listCoreCommandCatalog().find(item => item.command === '注册') : undefined);
+      const coreExecutionEntry = coreEntry ?? (commandId === 'story.register' || (apiPrefix === '/api/web/v1' && coreWindowCommand(command))
+        ? coreEntryForRawCommand(command) : undefined);
       if (coreExecutionEntry) {
         const execution = await executeCoreGameCommand({
           requestId: `web-action:${randomUUID()}`,
@@ -510,7 +511,7 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
       }
       const result = await executeAppCommand({ qqUserId, command });
       ctx.type = 'application/json';
-      ctx.body = { ok: true, commandId, command, ...result, refresh: entry.refresh ?? [], serverTime: new Date().toISOString() };
+      ctx.body = { ok: true, commandId, command, ...result, ...coreInteractionPresentation(command, [result.format]), refresh: entry.refresh ?? [], serverTime: new Date().toISOString() };
     } catch (error) {
       apiError(ctx, 400, error instanceof Error ? error.message : '命令执行失败。');
     }
@@ -536,7 +537,8 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
       }
       const qqUserId = await appSessionQqUser(session);
       // 注册开场由 Core 签发后续动作，避免旧 App 注册结果把隐藏剧情命令交给 H5。
-      if (!isAppCommandAllowed(command) || command.replace(/^\/+/, '') === '注册') {
+      if (!isAppCommandAllowed(command) || command.replace(/^\/+/, '') === '注册'
+        || (apiPrefix === '/api/web/v1' && coreWindowCommand(command))) {
         const coreEntry = coreEntryForRawCommand(command);
         if (!coreEntry) {
           apiError(ctx, 400, '网页端暂不支持此命令。');
@@ -568,7 +570,7 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
       }
       const result = await executeAppCommand({ qqUserId, command });
       ctx.type = 'application/json';
-      ctx.body = { ok: true, ...result, serverTime: new Date().toISOString() };
+      ctx.body = { ok: true, ...result, ...coreInteractionPresentation(command, [result.format]), serverTime: new Date().toISOString() };
     } catch (error) {
       apiError(ctx, 400, error instanceof Error ? error.message : '命令执行失败。');
     }
@@ -747,7 +749,34 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
         return;
       }
       const qqUserId = await appSessionQqUser(session);
-      const { moveToLocalCoordinate } = await import('../game/adventure.service');
+      const { moveToLocalCoordinate, battleStatus } = await import('../game/adventure.service');
+      const { openingStatus, beginOpening } = await import('../game/opening.service');
+      const opening = apiPrefix === '/api/web/v1' ? await openingStatus(qqUserId) : null;
+      if (opening && opening.state !== 'completed') {
+        const battle = await battleStatus(qqUserId).catch(() => null);
+        if (!battle?.targets?.length) {
+          // The first grid move starts the same opening route as QQ movement;
+          // it does not also change coordinates or advance an existing scene.
+          if (opening.state === 'armed') await beginOpening(qqUserId, 'move');
+          const command = '/注册';
+          const execution = await executeCoreGameCommand({
+            requestId: `web-opening:${randomUUID()}`,
+            actor: { provider: 'app', subject: qqUserId, displayName: session.displayName },
+            conversation: { scope: 'private', id: qqUserId },
+            command,
+            source: 'message'
+          });
+          const signed = await signedCoreResponse(session, bearer(ctx), command, execution, apiPrefix === '/api/web/v1');
+          const panel = await appQuickPanel(session);
+          ctx.type = 'application/json';
+          ctx.body = {
+            ok: true, ...signed, kind: 'story', presentation: 'story',
+            ...(panel.summary?.position ? { position: panel.summary.position } : {}),
+            panel, refresh: ['summary', 'story', 'nearby']
+          };
+          return;
+        }
+      }
       const result = await moveToLocalCoordinate(qqUserId, x, y, z) as any;
       const targets = Array.isArray(result.targets)
         ? result.targets.map((target: any) => ({

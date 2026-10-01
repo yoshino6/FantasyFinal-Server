@@ -1,0 +1,566 @@
+{
+  "version": 1,
+  "scenes": [
+    {
+      "sceneKey": "advanced.bulwark_guard.trial",
+      "groupKey": "advanced.bulwark_guard",
+      "sceneKeys": [
+        "advanced.bulwark_guard.trial",
+        "advanced.bulwark_guard.success"
+      ],
+      "file": "advanced-bulwark_guard-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "二转·盾卫：玩家眼前的石垒与导师试炼",
+      "npcIdentity": "石垒，人类男性约32岁，短栗棕发、榛棕眼，年轻方脸无胡须，沉稳温和；钢甲、苔绿根纹罩袍、米白披风、缺角旧盾。",
+      "source": "server/src/game/advanced-profession.config.ts",
+      "reviewStatus": {
+        "groupKey": "advanced.bulwark_guard",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "source_male",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "盾牌遮住双手；无可见手部结构异常",
+        "storyObjects": "缺角旧盾、苔绿根纹衣、米白披风"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04ad3ec72.webp",
+      "original": "artwork/story/advanced-bulwark_guard-v2.png"
+    },
+    {
+      "sceneKey": "advanced.war_lord.trial",
+      "groupKey": "advanced.war_lord",
+      "sceneKeys": [
+        "advanced.war_lord.trial",
+        "advanced.war_lord.success"
+      ],
+      "file": "advanced-war_lord-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "二转·战旗使：玩家眼前的旌岚与导师试炼",
+      "npcIdentity": "旌岚，人类男性约27岁，赤棕短马尾、灰绿眼，清晰颧骨，爽朗果断；青灰指挥外套、暗红披肩、铜扣、红色战旗。",
+      "source": "server/src/game/advanced-profession.config.ts",
+      "reviewStatus": {
+        "groupKey": "advanced.war_lord",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "source_male",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "前伸手为四指加一拇指；另一手环握旗杆",
+        "storyObjects": "红色战旗、铜扣、青灰指挥衣"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04aed7739.webp",
+      "original": "artwork/story/advanced-war_lord-v2.png"
+    },
+    {
+      "sceneKey": "advanced.ironbreaker.trial",
+      "groupKey": "advanced.ironbreaker",
+      "sceneKeys": [
+        "advanced.ironbreaker.trial",
+        "advanced.ironbreaker.success"
+      ],
+      "file": "advanced-ironbreaker-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "二转·剑豪：玩家眼前的铮然与导师试炼",
+      "npcIdentity": "铮然，人类男性约29岁，黑色低马尾、石灰色眼，瘦长脸、眉尾细疤，冷静克制；灰蓝剑士衣、深棕护腕、朴素钝锋长剑。",
+      "source": "server/src/game/advanced-profession.config.ts",
+      "reviewStatus": {
+        "groupKey": "advanced.ironbreaker",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "source_male",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "双手各自握住剑柄，拇指与环握指区分明确",
+        "storyObjects": "朴素长剑、木质训练靶"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04b0847f0.webp",
+      "original": "artwork/story/advanced-ironbreaker-v2.png"
+    },
+    {
+      "sceneKey": "advanced.elementalist.trial",
+      "groupKey": "advanced.elementalist",
+      "sceneKeys": [
+        "advanced.elementalist.trial",
+        "advanced.elementalist.success"
+      ],
+      "file": "advanced-elementalist-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "二转·元素使：玩家眼前的澜烬与导师试炼",
+      "npcIdentity": "澜烬，人类男性约24岁，银蓝及颈短发、青蓝眼，窄椭圆脸，专注理性；深蓝与象牙白法袍、少量金边，四元素光团。",
+      "source": "server/src/game/advanced-profession.config.ts",
+      "reviewStatus": {
+        "groupKey": "advanced.elementalist",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "new_design_male",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "两只施法手各见拇指与四指，无重复分叉",
+        "storyObjects": "火、冰、风、雷四元素"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04b2f30ad.webp",
+      "original": "artwork/story/advanced-elementalist-v2.png"
+    },
+    {
+      "sceneKey": "advanced.spellblade.trial",
+      "groupKey": "advanced.spellblade",
+      "sceneKeys": [
+        "advanced.spellblade.trial",
+        "advanced.spellblade.success"
+      ],
+      "file": "advanced-spellblade-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "二转·战斗法师：玩家眼前的砺烬与导师试炼",
+      "npcIdentity": "砺烬，人类男性约26岁，短铜红发、灰琥珀眼，利落下颌，敏捷自信；黑铜轻甲护袖、米白短袍、短杖术刃。",
+      "source": "server/src/game/advanced-profession.config.ts",
+      "reviewStatus": {
+        "groupKey": "advanced.spellblade",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "source_male",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "前手拇指压柄，其他指环握；后手握短杖",
+        "storyObjects": "术刃、短杖、咒语追随脚步的近身试炼"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04b4aaa81.webp",
+      "original": "artwork/story/advanced-spellblade-v2.png"
+    },
+    {
+      "sceneKey": "advanced.arcane_magister.trial",
+      "groupKey": "advanced.arcane_magister",
+      "sceneKeys": [
+        "advanced.arcane_magister.trial",
+        "advanced.arcane_magister.success"
+      ],
+      "file": "advanced-arcane_magister-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "二转·魔导：玩家眼前的玄衡与导师试炼",
+      "npcIdentity": "玄衡，人类男性约35岁，深靛及颈发、紫灰眼，细长脸、窄矩形眼镜，无胡须；深靛学者袍、银纹、秘典。",
+      "source": "server/src/game/advanced-profession.config.ts",
+      "reviewStatus": {
+        "groupKey": "advanced.arcane_magister",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "source_male",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "思考手部分手指自然遮挡；无额外手指",
+        "storyObjects": "眼镜、秘典、纯奥术晶体"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04b63209c.webp",
+      "original": "artwork/story/advanced-arcane_magister-v2.png"
+    },
+    {
+      "sceneKey": "advanced.nightblade.trial",
+      "groupKey": "advanced.nightblade",
+      "sceneKeys": [
+        "advanced.nightblade.trial",
+        "advanced.nightblade.success"
+      ],
+      "file": "advanced-nightblade-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "二转·夜刃：玩家眼前的影渡与导师试炼",
+      "npcIdentity": "影渡，人类男性约25岁，炭黑不对称短发、灰紫眼，薄唇、尖下颌，警觉淡定；炭灰轻甲斗篷、朴素双短刃。",
+      "source": "server/src/game/advanced-profession.config.ts",
+      "reviewStatus": {
+        "groupKey": "advanced.nightblade",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "source_male",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "握匕首手四指与拇指位置相符；后手藏于斗篷",
+        "storyObjects": "短刃、林间遮蔽环境"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04b7b2f74.webp",
+      "original": "artwork/story/advanced-nightblade-v2.png"
+    },
+    {
+      "sceneKey": "advanced.venomancer.trial",
+      "groupKey": "advanced.venomancer",
+      "sceneKeys": [
+        "advanced.venomancer.trial",
+        "advanced.venomancer.success"
+      ],
+      "file": "advanced-venomancer-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "二转·蚀毒师：玩家眼前的青蘅与导师试炼",
+      "npcIdentity": "青蘅，人类女性约27岁，深墨绿长辫、灰绿眼，成熟椭圆脸，审慎浅笑；鼠尾草色上衣、白围巾、深棕药师围裙、小药瓶。",
+      "source": "server/src/game/advanced-profession.config.ts",
+      "reviewStatus": {
+        "groupKey": "advanced.venomancer",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "source_female",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "举瓶手四指在瓶侧，拇指在后；桌面手自然放松",
+        "storyObjects": "药瓶、药草、药师围裙"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04b942d76.webp",
+      "original": "artwork/story/advanced-venomancer-v2.png"
+    },
+    {
+      "sceneKey": "advanced.trickster_ranger.trial",
+      "groupKey": "advanced.trickster_ranger",
+      "sceneKeys": [
+        "advanced.trickster_ranger.trial",
+        "advanced.trickster_ranger.success"
+      ],
+      "file": "advanced-trickster_ranger-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "二转·机关游侠：玩家眼前的弦枢与导师试炼",
+      "npcIdentity": "弦枢，人类女性约25岁，蜜棕高马尾、湖蓝眼、鼻侧少量雀斑，机敏轻笑；短青绿巡游外套、白护袖、机括与细线。",
+      "source": "server/src/game/advanced-profession.config.ts",
+      "reviewStatus": {
+        "groupKey": "advanced.trickster_ranger",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "source_female",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "双手握拉绳索，拇指与四指分区清楚",
+        "storyObjects": "机关滑轮、细线、变化站位的训练场"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04bb15980.webp",
+      "original": "artwork/story/advanced-trickster_ranger-v2.png"
+    },
+    {
+      "sceneKey": "advanced.saint_healer.trial",
+      "groupKey": "advanced.saint_healer",
+      "sceneKeys": [
+        "advanced.saint_healer.trial",
+        "advanced.saint_healer.success"
+      ],
+      "file": "advanced-saint_healer-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "二转·圣愈者：玩家眼前的白芷与导师试炼",
+      "npcIdentity": "白芷，人类女性约26岁，奶白色长发半束、暖棕眼，柔和圆脸；象牙白淡薰衣草愈师长衣、白枝、枝灯，安抚微笑。",
+      "source": "server/src/game/advanced-profession.config.ts",
+      "reviewStatus": {
+        "groupKey": "advanced.saint_healer",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "new_design_female",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "上手部分指弯曲遮挡；下手自然落在枝灯旁",
+        "storyObjects": "白枝、枝灯、治疗微光"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04bc92a38.webp",
+      "original": "artwork/story/advanced-saint_healer-v2.png"
+    },
+    {
+      "sceneKey": "advanced.aegis_priest.trial",
+      "groupKey": "advanced.aegis_priest",
+      "sceneKeys": [
+        "advanced.aegis_priest.trial",
+        "advanced.aegis_priest.success"
+      ],
+      "file": "advanced-aegis_priest-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "二转·圣盾使：玩家眼前的砺誓与导师试炼",
+      "npcIdentity": "砺誓，人类男性约33岁，深灰棕束发、钢蓝眼，宽椭圆脸无须，严肃可靠；白灰司祭铠甲、淡金边、祷典、厚盾。",
+      "source": "server/src/game/advanced-profession.config.ts",
+      "reviewStatus": {
+        "groupKey": "advanced.aegis_priest",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "source_male",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "盾手被盾自然遮挡；另一手为闭合拳",
+        "storyObjects": "厚盾、祷典、连续承击防护光"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04be20281.webp",
+      "original": "artwork/story/advanced-aegis_priest-v2.png"
+    },
+    {
+      "sceneKey": "advanced.sharpshooter.trial",
+      "groupKey": "advanced.sharpshooter",
+      "sceneKeys": [
+        "advanced.sharpshooter.trial",
+        "advanced.sharpshooter.success"
+      ],
+      "file": "advanced-sharpshooter-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "二转·神射手：玩家眼前的里德与导师试炼",
+      "npcIdentity": "里德，人类男性约28岁，灰金短发、森林绿眼，锐利细眉、轻微晒斑；橄榄绿猎装、鹰翎、长弓，沉静聚焦。",
+      "source": "server/src/game/advanced-profession.config.ts",
+      "reviewStatus": {
+        "groupKey": "advanced.sharpshooter",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "source_male",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "持弓手拇指与环握四指自然；拉弦手射箭姿态",
+        "storyObjects": "长弓、鹰翎、林间多距离靶"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04bf9adb8.webp",
+      "original": "artwork/story/advanced-sharpshooter-v2.png"
+    },
+    {
+      "sceneKey": "advanced.gunner.trial",
+      "groupKey": "advanced.gunner",
+      "sceneKeys": [
+        "advanced.gunner.trial",
+        "advanced.gunner.success"
+      ],
+      "file": "advanced-gunner-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "二转·枪炮师：玩家眼前的弗吉与导师试炼",
+      "npcIdentity": "弗吉，人类男性约30岁，蓬松铜棕短发、琥珀眼，圆阔脸无须、顽皮笑；棕革工匠衣、额头护目镜、手工火药炮、测距仪。",
+      "source": "server/src/game/advanced-profession.config.ts",
+      "reviewStatus": {
+        "groupKey": "advanced.gunner",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "source_male",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "前手握装填工具，后手落炮身；手套指区无重复",
+        "storyObjects": "手工火药炮、多重靶、火药器具"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04c11e245.webp",
+      "original": "artwork/story/advanced-gunner-v2.png"
+    },
+    {
+      "sceneKey": "advanced.ranger_warden.trial",
+      "groupKey": "advanced.ranger_warden",
+      "sceneKeys": [
+        "advanced.ranger_warden.trial",
+        "advanced.ranger_warden.success"
+      ],
+      "file": "advanced-ranger_warden-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "二转·林巡：玩家眼前的维尔与导师试炼",
+      "npcIdentity": "维尔，人类男性约26岁，深棕短发、绿棕眼，瘦削脸，安静观察；叶绿灰色短斗篷、布护腕、短弓、哨石与路标。",
+      "source": "server/src/game/advanced-profession.config.ts",
+      "reviewStatus": {
+        "groupKey": "advanced.ranger_warden",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "source_male",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "指向足迹手为伸食指、其余自然收拢；路标手拇指分开",
+        "storyObjects": "短弓、足迹、路标与哨石"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04c29b5ff.webp",
+      "original": "artwork/story/advanced-ranger_warden-v2.png"
+    },
+    {
+      "sceneKey": "advanced.dawn_inquisitor.trial",
+      "groupKey": "advanced.dawn_inquisitor",
+      "sceneKeys": [
+        "advanced.dawn_inquisitor.trial",
+        "advanced.dawn_inquisitor.success"
+      ],
+      "file": "advanced-dawn_inquisitor-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "二转·晨星祷者：玩家眼前的曦歌与导师试炼",
+      "npcIdentity": "曦歌，人类女性约24岁，淡玫瑰金齐肩发、浅紫眼，端正鹅蛋脸，庄重而柔和；米白金边祷官袍、晨星坠饰、微光法杖。",
+      "source": "server/src/game/advanced-profession.config.ts",
+      "reviewStatus": {
+        "groupKey": "advanced.dawn_inquisitor",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "new_design_female",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "悬光手四指与拇指可区分；持杖手环握",
+        "storyObjects": "晨星杖、晨星坠饰、明灭微光"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04c41e057.webp",
+      "original": "artwork/story/advanced-dawn_inquisitor-v2.png"
+    },
+    {
+      "sceneKey": "map_hidden.sword_shadow.trial",
+      "groupKey": "map_hidden.sword_shadow",
+      "sceneKeys": [
+        "map_hidden.sword_shadow.trial"
+      ],
+      "file": "map_hidden-sword_shadow-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "地图隐藏二转·剑影：玩家眼前的无声剑客与导师试炼",
+      "npcIdentity": "无声剑客，人类男性约28岁，墨黑长马尾、灰银眼，瘦长脸、平直薄唇；深蓝灰剑服、朴素剑与剑鞘，表情寡言专注。",
+      "source": "server/src/game/map-hidden-advanced-quest.config.ts",
+      "reviewStatus": {
+        "groupKey": "map_hidden.sword_shadow",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "new_design_male",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "握剑手四指与拇指清楚；拭剑手掌夹布自然",
+        "storyObjects": "剑、剑鞘、拭剑白布、一名陪练"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04c595230.webp",
+      "original": "artwork/story/map_hidden-sword_shadow-v2.png"
+    },
+    {
+      "sceneKey": "map_hidden.titan.trial",
+      "groupKey": "map_hidden.titan",
+      "sceneKeys": [
+        "map_hidden.titan.trial"
+      ],
+      "file": "map_hidden-titan-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "地图隐藏二转·泰坦：玩家眼前的磐躯与导师试炼",
+      "npcIdentity": "磐躯，人类男性约36岁，深棕短平头、琥珀眼，宽脸无须，强健魁梧但非巨人怪物；灰棕护肩、简洁厚布与皮革、重训练锤，坚韧平静。",
+      "source": "server/src/game/map-hidden-advanced-quest.config.ts",
+      "reviewStatus": {
+        "groupKey": "map_hidden.titan",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "new_design_male",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "前伸掌四指加一拇指清楚；持锤手自然握柄",
+        "storyObjects": "重训练锤、两名陪练、队伍承伤试炼环境"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04c71e895.webp",
+      "original": "artwork/story/map_hidden-titan-v2.png"
+    },
+    {
+      "sceneKey": "map_hidden.spirit_summoner.trial",
+      "groupKey": "map_hidden.spirit_summoner",
+      "sceneKeys": [
+        "map_hidden.spirit_summoner.trial"
+      ],
+      "file": "map_hidden-spirit_summoner-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "地图隐藏二转·唤灵师：玩家眼前的栖羽与导师试炼",
+      "npcIdentity": "栖羽，人类女性约24岁，赤栗长发半束、金棕眼，略尖椭圆脸，体贴宁静；白与淡水绿灵契长衣、叶芽发饰，三职责灵兽。",
+      "source": "server/src/game/map-hidden-advanced-quest.config.ts",
+      "reviewStatus": {
+        "groupKey": "map_hidden.spirit_summoner",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "new_design_female",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "前伸手自然松弛，可见四指与拇指；另一手被衣袖遮挡",
+        "storyObjects": "攻火鸟、疗水鹿、守苔龟与召回光羽"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04c89ffb1.webp",
+      "original": "artwork/story/map_hidden-spirit_summoner-v2.png"
+    },
+    {
+      "sceneKey": "map_hidden.master_thief.trial",
+      "groupKey": "map_hidden.master_thief",
+      "sceneKeys": [
+        "map_hidden.master_thief.trial"
+      ],
+      "file": "map_hidden-master_thief-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "地图隐藏二转·妙手：玩家眼前的拾潮与导师试炼",
+      "npcIdentity": "拾潮，人类女性约26岁，墨紫齐耳短发、灰紫眼，小尖脸，狡黠但有分寸的笑；深蓝黑短航海衣、贝壳扣、轻手套、少量腰包。",
+      "source": "server/src/game/map-hidden-advanced-quest.config.ts",
+      "reviewStatus": {
+        "groupKey": "map_hidden.master_thief",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "new_design_female",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "捏凭证为食指与拇指，另三指弯曲；托袋掌自然遮挡",
+        "storyObjects": "闭合训练袋、战斗凭证、普通陪练"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04ca1a912.webp",
+      "original": "artwork/story/map_hidden-master_thief-v2.png"
+    },
+    {
+      "sceneKey": "map_hidden.holy_knight.trial",
+      "groupKey": "map_hidden.holy_knight",
+      "sceneKeys": [
+        "map_hidden.holy_knight.trial"
+      ],
+      "file": "map_hidden-holy_knight-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "地图隐藏二转·圣骑：玩家眼前的雪槐与导师试炼",
+      "npcIdentity": "雪槐，人类女性约31岁，银白长辫、冰蓝眼，坚毅椭圆脸；白钢板甲、冰青围巾、断旗与护盾，守誓般平和坚定。",
+      "source": "server/src/game/map-hidden-advanced-quest.config.ts",
+      "reviewStatus": {
+        "groupKey": "map_hidden.holy_knight",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "new_design_female",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "右手抚胸四指与拇指可区分；左手环握盾柄",
+        "storyObjects": "断旗、白钢盾、守望灯、队友受护"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04cb98e1f.webp",
+      "original": "artwork/story/map_hidden-holy_knight-v2.png"
+    },
+    {
+      "sceneKey": "map_hidden.stringblade.trial",
+      "groupKey": "map_hidden.stringblade",
+      "sceneKeys": [
+        "map_hidden.stringblade.trial"
+      ],
+      "file": "map_hidden-stringblade-v2.webp",
+      "width": 1672,
+      "height": 941,
+      "alt": "地图隐藏二转·弦刃使：玩家眼前的弦陌与导师试炼",
+      "npcIdentity": "弦陌，人类男性约25岁，乌黑带灰绿光泽短马尾、琥珀棕眼，细长敏捷脸；浅棕短斗篷、黑绿轻甲、弓与短刃，观察性浅笑。",
+      "source": "server/src/game/map-hidden-advanced-quest.config.ts",
+      "reviewStatus": {
+        "groupKey": "map_hidden.stringblade",
+        "reviewStatus": "inspected",
+        "sourceGenderBasis": "new_design_male",
+        "raceBasis": "原文未固定种族，本批新增人类美术设定",
+        "identityConsistency": true,
+        "playerAbsent": true,
+        "simpleBrightAnimeStyle": true,
+        "handReview": "示意手自然侧掌；短刃手四指环握与拇指区分",
+        "storyObjects": "独立弓与短刃、远程靶、一名陪练、断崖吊桥"
+      },
+      "qqUrl": "https://i.czl.net/b2/img/26-09/6abd04cd30d39.webp",
+      "original": "artwork/story/map_hidden-stringblade-v2.png"
+    }
+  ]
+}

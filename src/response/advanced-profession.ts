@@ -7,6 +7,7 @@ import { beginInheritanceStudy, completeInheritanceStudy, equipInheritanceStudy,
 import { advancedProfessionByCode, registeredAdvancedProfessionByCode, inheritancePassiveFor } from '../game/advanced-profession.config';
 import { messageFormat } from '../game/message';
 import { durationText } from '../game/time-format';
+import { addStoryIllustration } from '../game/story-illustrations';
 
 const fail = async (message: any, error: unknown, title = '二转试炼') => message.send({ format: messageFormat(title, error instanceof Error ? error.message : '请稍后重试。') });
 const baseName = (code: string) => ({ warrior: '战士', mage: '法师', rogue: '盗贼', priest: '牧师', archer: '射手' } as Record<string, string>)[code] ?? code;
@@ -35,8 +36,9 @@ export const advancedProfessionDetailFormat = async (qqUserId: string, mentorCod
   const activeProfession = activeQuest ? registeredAdvancedProfessionByCode(activeQuest.profession_code) : undefined;
   const currentProfession = registeredAdvancedProfessionByCode(completedCode ?? '');
   const dialogue = mentorDialogues[mentorCode];
-  const markdown = Format.createMarkdown().addTitle(`关于 ${profession.name}`).addNewline().addNewline().addBlockquote(dialogue?.introduction ?? profession.role).addNewline().addNewline()
-    .addText(`队伍定位：${profession.role}`).addNewline().addNewline();
+  const markdown = Format.createMarkdown().addTitle(`关于 ${profession.name}`).addNewline().addNewline();
+  if(completed||activeQuest?.profession_code===profession.code&&stage>=1)addStoryIllustration(markdown,`advanced.${profession.code}.${completed?'success':stage===1?'first':stage===2?'second':'trial'}`);
+  markdown.addBlockquote(dialogue?.introduction ?? profession.role).addNewline().addNewline().addText(`队伍定位：${profession.role}`).addNewline().addNewline();
   const buttons = Format.createButtonGroup();
   if (completed) {
     markdown.addText(`你已经成为${profession.name}。`).addNewline().addNewline().addBlockquote(advancedProfessionReveal(profession)).addNewline().addNewline().addText('导师不再重复试炼，只提醒你把这份力量用在值得守护的同伴身上。');

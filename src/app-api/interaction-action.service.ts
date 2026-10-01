@@ -2,7 +2,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { executeCoreGameCommand, listCoreCommandCatalog, type CoreRouteExecution } from '../core-command-bridge';
 import type { CoreCommandRequest } from '../contracts/core-api';
 import { appSessionQqUser, type AppSession } from '../game/app-channel.service';
-import { formatValueToAppMessage, type AppFormatNode } from './app-format';
+import { formatValueToAppMessage, type AppFormatNode, type AppMessage } from './app-format';
+import { coreInteractionPresentation, type CoreInteractionPresentation } from './core-interaction-presentation';
 
 const ACTION_TTL_MS = 2 * 60_000;
 const RESULT_TTL_MS = 5 * 60_000;
@@ -21,10 +22,11 @@ export type CoreInteractionMessage = {
   markdown?: string;
   /** Button/MD.button command data is removed. Execute only the signed buttons below. */
   format?: AppFormatNode[];
+  storyImage?: AppMessage['storyImage'];
   buttons: IssuedCoreInteractionButton[];
 };
 
-export type IssuedCoreInteractionResult = {
+export type IssuedCoreInteractionResult = CoreInteractionPresentation & {
   revision: string;
   expiresAt: string;
   messages: CoreInteractionMessage[];
@@ -186,6 +188,7 @@ export const createCoreInteractionActionService = (overrides: Partial<Dependenci
 
   const issueFromResult = (
     execution: CoreRouteExecution,
+    executedCommand: string,
     session: AppSession,
     tokenHash: string,
     qqUserId: string,
@@ -225,10 +228,11 @@ export const createCoreInteractionActionService = (overrides: Partial<Dependenci
         text: message.text,
         ...(message.markdown ? { markdown: message.markdown } : {}),
         ...(message.format ? { format: safeFormat(message.format) } : {}),
+        ...(message.storyImage ? { storyImage: message.storyImage } : {}),
         buttons
       };
     });
-    return { revision, expiresAt: new Date(expiresAt).toISOString(), messages, serverTime: new Date(now).toISOString() };
+    return { ...coreInteractionPresentation(executedCommand, execution.formats), revision, expiresAt: new Date(expiresAt).toISOString(), messages, serverTime: new Date(now).toISOString() };
   };
 
   const issue = async (input: IssueInput): Promise<IssuedCoreInteractionResult> => {
@@ -238,7 +242,7 @@ export const createCoreInteractionActionService = (overrides: Partial<Dependenci
     }
     const qqUserId = await dependencies.resolveQqUser(input.session);
     if (!qqUserId) throw new CoreInteractionActionError('invalid_action', '互动身份无效。', 401);
-    return issueFromResult(input.execution, input.session, sessionHash(input.sessionToken), qqUserId, undefined, input.blockWebProtectedWrites);
+    return issueFromResult(input.execution, input.originCommand, input.session, sessionHash(input.sessionToken), qqUserId, undefined, input.blockWebProtectedWrites);
   };
 
   const execute = async (input: ExecuteInput): Promise<IssuedCoreInteractionResult> => {
@@ -285,7 +289,7 @@ export const createCoreInteractionActionService = (overrides: Partial<Dependenci
         command: action.command,
         source: 'interaction'
       });
-      return issueFromResult(execution, input.session, tokenHash, qqUserId, action.revision, input.blockWebProtectedWrites);
+      return issueFromResult(execution, action.command, input.session, tokenHash, qqUserId, action.revision, input.blockWebProtectedWrites);
     })();
     action.result = result;
     void result.then(

@@ -3,6 +3,7 @@ import { useGameMessage } from '../game/use-game-message';
 import { messageFormat } from '../game/message';
 import { keepsakeAction, keepsakeView } from '../game/opening-keepsakes.service';
 import { openingJob } from '../game/opening-progress.service';
+import { addStoryIllustration } from '../game/story-illustrations';
 
 export const keepsakeHandler=async()=>{
   const [event]=useEvent(),[route]=useRoute(),[message]=useGameMessage();
@@ -36,6 +37,6 @@ export const openingJobHandler=async()=>{
     if(result.action)buttons.addButton(result.action,`/初行委托 ${result.revision}`,{type:'command',autoEnter:true,style:'blue'});
     else buttons.addButton('查看委托','/初行委托',{type:'command',autoEnter:true});
     buttons.addButton('返回公会','/初行公会',{type:'command',autoEnter:true});
-    await message.send({format:Format.create().addMarkdown(Format.createMarkdown().addTitle(result.title).addNewline().addNewline().addText(result.text)).addButtonGroup(buttons)});
+    await message.send({format:Format.create().addMarkdown(addStoryIllustration(Format.createMarkdown().addTitle(result.title).addNewline().addNewline(),result.illustrationKey??'').addText(result.text)).addButtonGroup(buttons)});
   }catch(error){await message.send({format:messageFormat('初行委托',error instanceof Error?error.message:'请稍后重试。')});}
 };

@@ -1,10 +1,12 @@
 import { Format } from 'alemonjs';
 import type { OpeningView } from './opening.types';
 import { firstPersonNarrative } from './narrative-voice';
+import { addStoryIllustration } from './story-illustrations';
 
 export const openingFormat = (story: OpeningView) => {
   const progress=story.state!=='choice'&&story.pages>1?`（${story.page}/${story.pages}）`:'';
   const md=Format.createMarkdown().addTitle(`初章·${story.title}${progress}`).addNewline().addNewline();
+  if(story.illustrationKey)addStoryIllustration(md,story.illustrationKey);
   // 剧情正文保留自然段，选项与系统提示另行排版，方便在 QQ 中连续阅读。
   const paragraphs=firstPersonNarrative(story.text).trim().split(/\r?\n\s*\r?\n/).map(text=>text.trim()).filter(Boolean);
   for(const [index,paragraph] of paragraphs.entries()){
