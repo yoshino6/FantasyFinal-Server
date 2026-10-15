@@ -139,12 +139,15 @@ export const startCoreApiServer = async () => {
       if (cached && cached.expiresAt > Date.now()) { ctx.type = 'application/json'; ctx.body = cached.response; return; }
       let response: CoreCommandResponse;
       try {
-        await enqueueQqCommandNotices(body);
         const legacy = await executeCoreGameCommand(body);
-        // 已注册命令完全复用原版 response handler；只有未注册的桌宠兼容命令才走旧的 App facade。
+        // 保留已有桌宠兼容命令；未识别的 QQ 输入静默忽略，不返回 App 网关说明。
+        const fallback = legacy.matched ? undefined : await executeAppCommand(
+          { qqUserId: body.actor.subject, command: body.command }, { ignoreUnsupported: true }
+        );
+        if (legacy.matched || fallback) await enqueueQqCommandNotices(body);
         const messages = legacy.matched
           ? toCapturedCoreMessages(legacy.formats)
-          : toCoreMessages(await executeAppCommand({ qqUserId: body.actor.subject, command: body.command }));
+          : fallback ? toCoreMessages(fallback) : [];
         response = { ok: true, requestId: body.requestId, messages, stateVersion: new Date().toISOString() };
       }
       catch (error) { response = errorResponse(body.requestId, 'COMMAND_INVALID', error instanceof Error ? error.message : '命令执行失败。'); }

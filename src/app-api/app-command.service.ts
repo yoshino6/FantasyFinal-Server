@@ -1009,7 +1009,9 @@ const coordinateInteractionButtons = (result: any): { label: string; command: st
   return [];
 };
 
-export const executeAppCommand = async (input: AppCommandInput): Promise<AppMessage> => {
+export function executeAppCommand(input: AppCommandInput): Promise<AppMessage>;
+export function executeAppCommand(input: AppCommandInput, options: { ignoreUnsupported: true }): Promise<AppMessage | undefined>;
+export async function executeAppCommand(input: AppCommandInput, options?: { ignoreUnsupported: true }): Promise<AppMessage | undefined> {
   const raw = String(input.command ?? '').trim();
   const command = raw.startsWith('/') ? raw.slice(1) : raw;
   const [head, ...args] = command.split(/\s+/).filter(Boolean);
@@ -1342,9 +1344,9 @@ export const executeAppCommand = async (input: AppCommandInput): Promise<AppMess
     case '选择恩赐':
       return giftText(input.qqUserId, args[0] ?? '');
     default:
-      return unsupportedText(raw);
+      return options?.ignoreUnsupported ? undefined : unsupportedText(raw);
   }
-};
+}
 
 const menuItem = (id: string, label: string, command: string | undefined, enabled: boolean, reason?: string, refresh?: string[], action?: string, children?: DesktopMenuItem[]): DesktopMenuItem => ({
   id, label, ...(command ? { command } : {}), ...(action ? { action } : {}), enabled, ...(reason ? { reason } : {}), ...(refresh ? { refresh } : {}), ...(children ? { children } : {})
