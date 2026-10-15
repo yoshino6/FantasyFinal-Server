@@ -3,6 +3,7 @@ import { recordAchievement } from './achievement-events';
 import { talentMaterialPayment, consumeTalentMaterial } from './talent-production';
 import { consumeBinding, consumeInventory, grantInventory, productionBinding, type Binding } from './inventory-binding';
 import { recordCharacterOperation } from './character-operation.service';
+import { assertEnvironmentIdle } from './map-environment.service';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { getPool, withTransaction } from '../database/pool';
 import { BAINA_GUILD_POSITION, BAINA_RESIDENCE_CODE, homeCosts, homePlotDistance, slotsPerFloor } from './home.constants';
@@ -55,6 +56,7 @@ export const requireHomeShopTarget = async (connection: Db, qqUserId: string, ta
   return { characterId: Number(character.id), target: { id: BAINA_RESIDENCE_CODE, name: '百纳居', locationRequired: true } };
 };
 const assertFree = async (connection: Db, character: Character, allowResting = false, readOnly = false) => {
+  if (!readOnly) await assertEnvironmentIdle(connection, Number(character.id));
   if (character.activity_status === 'detained') throw new Error('你正在被守卫关押。');
   if (character.activity_status === 'unconscious') throw new Error('你已昏迷，暂时无法进入家园。');
   if (!allowResting && character.activity_status === 'resting') throw new Error('请先结束休息。');
@@ -226,6 +228,7 @@ export const enterHome = async (qqUserId: string) => withTransaction(async conne
 
 export const leaveHome = async (qqUserId: string) => withTransaction(async connection => {
   const character = await characterFor(connection, qqUserId, true); const home = await homeFor(connection, character.id, true);
+  await assertEnvironmentIdle(connection, Number(character.id));
   if (!home || !await isInHome(connection, character.id)) throw new Error('你当前不在自己的家园中。');
   const { settleHomeRestExperience } = await import('./adventure.service');
   await settleHomeRestExperience(connection, Number(character.id));

@@ -37,3 +37,19 @@ test('bank mutations require confirmation while the bank overview stays read-onl
   }
   assert.equal(catalog.get('钱庄')?.readOnly, true);
 });
+
+test('environment clear actions explicitly separate reading progress from persistent writes', () => {
+  const paths = ['景物详情', '清理景物', '刷新清理', '结算清理', '取消清理'];
+  registerCoreCommandRouter({ dispatch: async () => undefined, routes: new Map([['private.message.create', { one: new Map(paths.map(path => [path, { config: { path } }])), two: new Map() }]]) });
+  const catalog = new Map(listCoreCommandCatalog().map(entry => [entry.command, entry]));
+  for (const command of paths) {
+    const entry = catalog.get(command)!;
+    const reading = command === '景物详情' || command === '刷新清理';
+    assert.equal(entry.category, 'explore');
+    assert.equal(entry.readOnly, reading);
+    assert.equal(entry.risk, reading ? 'read' : 'write');
+    assert.ok(entry.refresh.includes('nearby'));
+    if (!reading) assert.ok(entry.refresh.includes('map'));
+  }
+  assert.ok(catalog.get('结算清理')!.refresh.includes('inventory'));
+});

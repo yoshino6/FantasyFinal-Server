@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import type { PoolConnection, RowDataPacket } from 'mysql2/promise';
 import { withTransaction } from '../database/pool';
 import { craftCharacterId, createCraftRequest, craftRequestFor, completeCraftRequest } from '../game/alchemy-journal.service';
@@ -8,6 +9,10 @@ import {
   upgradeSkillInTransaction, upgradeSkillSpecializationInTransaction
 } from '../game/adventure.service';
 import { assertCombatLoadoutMutable } from '../game/combat-loadout-lock.service';
+import { skillSpecializationDetails } from './skill-specialization-details';
+import { skillCombatDetails } from './skill-combat-details';
+import { aoeSkillPower } from '../game/aoe-damage.config';
+import { craftsmanshipEffect } from '../game/blacksmith.service';
 
 export const SKILL_PAGE_SIZE = 10;
 export const SKILL_ACTIONS = ['learn', 'upgrade', 'specialization', 'passive_link', 'shortcut', 'appraisal'] as const;
@@ -73,7 +78,7 @@ export const skillPage = (qqUserId: string, view: 'learned' | 'available', reque
     for (const item of current) {
       if (view === 'learned' && 'level' in item) {
         items.push({
-          id: Number(item.id), code: String(item.code), name: item.name, category: item.category, tier: item.tier,
+          id: Number(item.id), code: String(item.code), name: item.name, description: item.description, category: item.category, tier: item.tier,
           level: Number(item.level), quickSlot: item.quick_slot == null ? null : Number(item.quick_slot), passiveLinked: Boolean(item.passive_linked)
         });
         continue;
@@ -81,18 +86,18 @@ export const skillPage = (qqUserId: string, view: 'learned' | 'available', reque
       const discovered = item as typeof data.discoveries[number];
       try {
         const quote = await quoteAction(connection, qqUserId, { action: 'learn', skillId: Number(discovered.id) });
-        items.push({ id: Number(discovered.id), name: discovered.name, category: discovered.category, tier: discovered.tier,
+        items.push({ id: Number(discovered.id), code: String(discovered.code), name: discovered.name, description: discovered.description, category: discovered.category, tier: discovered.tier,
           learnCost: Number(discovered.learn_cost), canLearn: true, remainingSkillPoints: quote.skillPointsAfter });
       } catch (error) {
         if (isInfrastructureError(error)) throw error;
-        items.push({ id: Number(discovered.id), name: discovered.name, category: discovered.category, tier: discovered.tier,
+        items.push({ id: Number(discovered.id), code: String(discovered.code), name: discovered.name, description: discovered.description, category: discovered.category, tier: discovered.tier,
           learnCost: Number(discovered.learn_cost), canLearn: false, reason: error instanceof Error ? error.message : '暂时不能学习。' });
       }
     }
     return { view, page, totalPages, total: source.length, keyword: query, skillPoints: Number(data.skillPoints),
       passiveLinkLimit: Number(data.passiveLinkLimit),
-      quickSlots: data.skills.filter(item => item.quick_slot).map(item => ({ slot: Number(item.quick_slot), skillId: Number(item.id), name: item.name })),
-      linkedPassives: data.skills.filter(item => item.category === 'passive' && Boolean(item.passive_linked)).map(item => ({ skillId: Number(item.id), name: item.name })), items };
+      quickSlots: data.skills.filter(item => item.quick_slot).map(item => ({ slot: Number(item.quick_slot), skillId: Number(item.id), code: String(item.code), name: item.name })),
+      linkedPassives: data.skills.filter(item => item.category === 'passive' && Boolean(item.passive_linked)).map(item => ({ skillId: Number(item.id), code: String(item.code), name: item.name })), items };
   });
 
 const candidateActions = (detail: Awaited<ReturnType<typeof skillDetail>>): SkillActionInput[] => {
@@ -113,6 +118,13 @@ export const skillDetailView = (qqUserId: string, skillId: number) => withTransa
   await craftCharacterId(connection, qqUserId, true);
   const list = await skillList(qqUserId, connection);
   const detail = await skillDetail(qqUserId, integer(skillId, '技能编号'), connection);
+  const craftsmanship = detail.code === 'craftsmanship' ? await craftsmanshipEffect(qqUserId) ?? undefined : undefined;
+  const presentation = skillCombatDetails({ ...detail, craftsmanship });
+  let passiveEffect: Record<string, unknown> = {};
+  try {
+    const parsed = typeof detail.passive_effect_json === 'string' ? JSON.parse(detail.passive_effect_json) : detail.passive_effect_json;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) passiveEffect = parsed;
+  } catch { /* Legacy malformed passive data does not prevent viewing the skill. */ }
   const learned = list.skills.find(item => Number(item.id) === skillId);
   const actions = [] as Array<SkillActionInput & { enabled: boolean; quote?: SkillQuote; reason?: string }>;
   for (const action of candidateActions(detail)) {
@@ -123,12 +135,17 @@ export const skillDetailView = (qqUserId: string, skillId: number) => withTransa
   return { skill: {
     id: Number(detail.id), code: detail.code, name: detail.name, category: detail.category, tier: detail.tier,
     description: detail.description, learned: Boolean(detail.learned), level: Number(detail.level), maxLevel: Number(detail.max_level),
+    ...presentation,
     skillPoints: Number(detail.skillPoints), learnCost: Number(detail.learn_cost), nextUpgradeCost: detail.nextUpgradeCost,
     skillKind: detail.skill_kind, element: detail.element, rangeType: detail.range_type, targetScope: detail.target_scope,
     requiredWeaponType: detail.required_weapon_type, actualPower: Number(detail.actualPower),
     actualManaCost: Number(detail.actualManaCost), actualCooldown: Number(detail.actualCooldown), actualChant: Number(detail.actualChant),
+    basePower: aoeSkillPower(detail.code, Number(detail.power) || 0), baseManaCost: Number(detail.mana_cost) || 0,
+    baseCooldown: Number(detail.cooldown_turns) || 0, baseChant: Number(detail.chant_turns) || 0,
+    passiveEffect, weaponMastery: Boolean(detail.weaponMastery), characterLevel: Number(detail.characterLevel),
     quickSlot: learned?.quick_slot == null ? null : Number(learned.quick_slot), passiveLinked: Boolean(learned?.passive_linked),
     specializations: detail.specializations, specializationChoices: detail.specializationChoices,
+    specializationDetails: skillSpecializationDetails(detail),
     specializationUpgradeCosts: detail.weaponMastery
       ? { overcharge: detail.masteryProficiencyCost, instant: detail.masteryFocusCost }
       : detail.passiveSpecializable ? { potent: detail.specializationUpgradeCost }
@@ -155,7 +172,8 @@ export const confirmSkillAction = (qqUserId: string, token: string, idempotencyK
   if (request.snapshot.idempotencyKey !== idempotencyKey) throw new Error('确认凭据不匹配，请重新获取技能预览。');
   if (request.result) return request.result;
   const fresh = await quoteAction(connection, qqUserId, request.snapshot);
-  if (JSON.stringify(fresh) !== JSON.stringify(request.snapshot.quote)) throw new Error('技能或技能点状态已变化，请重新获取预览。');
+  // MySQL JSON storage can reorder object keys without changing the quote.
+  if (!isDeepStrictEqual(fresh, request.snapshot.quote)) throw new Error('技能或技能点状态已变化，请重新获取预览。');
   const result = await actionResult(connection, qqUserId, request.snapshot, false);
   await completeCraftRequest(connection, characterId, token, result);
   return result;

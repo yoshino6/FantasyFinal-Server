@@ -157,7 +157,7 @@ const currentMainQuestAfterMapRepair = async (qqUserId: string, _skipLamplight =
     const stage = barrierStage(character.barrier_stage);
     if (stage === 0) return { title: '【主线·无形的禁锢】', description: '体内的力量已经积蓄到极限，却被一道看不见的屏障牢牢挡住。\n前往百纳镇的糖水屋，向老板请教这种异常。', action: { label: '[前往 糖水屋]', command: '/前往 -12 -196 0' } };
     if (stage === 1) return { title: '【主线·寻访晴儿】', description: '前台小姐姐建议你去找炼金师晴儿。\n前往糖水屋，询问这道无形的禁锢。', action: { label: '[前往 糖水屋]', command: '/前往 -12 -196 0' } };
-    if (stage === 2 && !Number(character.owns_sky_dust)) return { title: '【主线·追寻天空粉尘】', description: '击败幽影狼王，收集一份【天空粉尘】。\n它或许能帮助你感悟这方世界。' };
+    if (stage === 2 && !Number(character.owns_sky_dust)) return { title: '【主线·追寻天空粉尘】', description: '前往幽暗密林，击败幽影狼王，收集一份【天空粉尘】。\n它或许能帮助你感悟这方世界。', action: character.region_code === 'dark_forest' ? { label: '[寻找 狼王]', command: '/寻怪' } : { label: '[前往 幽暗密林]', command: '/前往地图 map_dark_forest' } };
     if (stage === 2 || stage === 3) return { title: '【主线·归还天空粉尘】', description: '你已获得【天空粉尘】。\n回到糖水屋，把它交给晴儿看看。', action: { label: '[前往 糖水屋]', command: '/前往 -12 -196 0' } };
     return { title: '【主线·窥探世间】', description: '天空粉尘在背包中微微发亮，似乎正在等待你的感悟。', action: { label: '[打开背包]', command: '/背包 材料' } };
   }
@@ -177,7 +177,7 @@ const currentMainQuestAfterMapRepair = async (qqUserId: string, _skipLamplight =
     if (cap >= 30) return level >= 30
       ? { title: '【主线·开化完成】', description: '十道生长结已尽数解开。进化之种安静地沉入体内，等待下一境界的呼唤。', action: { label: '[查看 进化面板]', command: '/进化面板' } }
       : { title: '【主线·开化·最终生长】', description: '最后一道生长结已经解开。继续积累力量，抵达 Lv.30。', action: { label: '[查看 进化面板]', command: '/进化面板' } };
-    if (level >= cap && experience >= experienceRequiredForLevel(cap)) return { title: '【主线·开化·生长结】', description: `Lv.${cap} 的生长结已经形成。前往世界树上的演化研究室，制作并注射一支进化针剂。`, action: { label: '[前往 演化研究室]', command: '/前往 -6 7 0' } };
+    if (level >= cap && experience >= experienceRequiredForLevel(cap)) return { title: '【主线·开化·生长结】', description: `Lv.${cap} 的生长结已经形成。前往世界树上的演化研究室，选择针剂并预览注射；确认材料消耗后解除生长结。`, action: { label: '[前往 演化研究室]', command: '/前往 -6 7 0' } };
     return { title: '【主线·开化】', description: `进化之种在体内缓慢搏动。继续积累力量，抵达 Lv.${cap} 的生长结后前往演化研究室。`, action: { label: '[查看 进化面板]', command: '/进化面板' } };
   }
   if (level < 11) return {

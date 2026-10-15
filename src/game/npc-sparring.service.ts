@@ -11,6 +11,7 @@ import { advancedResourceForProfession } from './advanced-resource.config';
 import { buildNpcSparProfile, canonicalSparNpc, canSparNpc, carriedSparSkills, type NpcSparProfile } from './npc-sparring.config';
 import { residentSkillByCode } from './resident-skill.config';
 import { resetCardMovementCharge } from './monster-card-exploration.service';
+import { assertEnvironmentIdle } from './map-environment.service';
 
 type Db = Pool | PoolConnection;
 const json = (value: unknown): Record<string, any> => typeof value === 'string' ? JSON.parse(value) : (value ?? {}) as Record<string, any>;
@@ -46,6 +47,7 @@ export const npcSparringView = async (userId: string, code: string) => { const p
 export const startNpcSparring = async (userId: string, code: string) => withTransaction(async connection => {
   const businessDate = sparBusinessDate();
   let character = await playerFor(connection, userId, true);
+  await assertEnvironmentIdle(connection, Number(character.id));
   if (character.activity_status !== 'active' || Number(character.current_hp) <= 0) throw new Error('请在能够正常行动时再切磋。');
   const [busy] = await connection.execute<RowDataPacket[]>(`SELECT
     EXISTS(SELECT 1 FROM player_travels WHERE character_id=?) AS travelling,

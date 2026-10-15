@@ -12,6 +12,10 @@ test('web evolution routes require a session and accept only pause or resume', a
   const calls: unknown[][] = [];
   const modules: Record<string, unknown> = {
     '../game/app-channel.service': { appSessionQqUser: async () => 'player' },
+    './evolution-progression.service': {
+      previewEvolutionProgression: async (...args: unknown[]) => { calls.push(['growth-preview', ...args]); return { token: 't' }; },
+      confirmEvolutionProgression: async (...args: unknown[]) => { calls.push(['growth-confirm', ...args]); return { toLevel: 21 }; }
+    },
     './evolution.service': {
       evolutionStatus: async (...args: unknown[]) => { calls.push(['status', ...args]); return { profileOpened: true }; },
       evolutionMutation: async (...args: unknown[]) => { calls.push(['detail', ...args]); return { mutation: { id: 5 } }; },
@@ -51,4 +55,14 @@ test('web evolution routes require a session and accept only pause or resume', a
   await posts.get('/api/web/v1/evolution/mutations/confirm')!(confirm);
   assert.deepEqual(calls[3], ['confirm', 'player', 't', 'k']);
   assert.deepEqual(confirm.body.refresh, ['summary', 'evolution', 'character']);
+  await posts.get('/api/web/v1/evolution/progression/preview')!({ authenticated: false });
+  await posts.get('/api/web/v1/evolution/progression/confirm')!({ authenticated: false });
+  assert.equal(calls.length, 4);
+  const growth = { authenticated: true, requestBody: { kind: 'inject', code: 'conservative' } } as any;
+  await posts.get('/api/web/v1/evolution/progression/preview')!(growth);
+  assert.deepEqual(calls[4], ['growth-preview', 'player', growth.requestBody]);
+  const growthConfirm = { authenticated: true, requestBody: { token: 't', idempotencyKey: 'k' } } as any;
+  await posts.get('/api/web/v1/evolution/progression/confirm')!(growthConfirm);
+  assert.deepEqual(calls[5], ['growth-confirm', 'player', 't', 'k']);
+  assert.deepEqual(growthConfirm.body.refresh, ['summary', 'evolution', 'character', 'inventory']);
 });

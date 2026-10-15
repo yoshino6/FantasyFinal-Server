@@ -1,6 +1,6 @@
 import { Format, logger, useEvent, useRoute } from 'alemonjs';
 import { useGameMessage as useMessage } from '../game/use-game-message';
-import { battleStatus, blockedDungeonDirections, completeTravel, movementProfile, nearbyPoints, resourceMiningStatus, resumeAction, setMapLandmarksVisible, setNearbyPlayersVisible, startRest, travelStatus, type MapLandmark, type NearbyPoint } from '../game/adventure.service';
+import { battleStatus, environmentDirectionState, completeTravel, movementProfile, nearbyPoints, resourceMiningStatus, resumeAction, setMapLandmarksVisible, setNearbyPlayersVisible, startRest, travelStatus, type MapLandmark, type NearbyPoint } from '../game/adventure.service';
 import { messageFormat, sendWithTextFallback } from '../game/message';
 import { autoBattleConfig } from '../game/auto-battle.service';
 import { homePanel } from '../game/home.service';
@@ -8,6 +8,8 @@ import { durationText } from '../game/time-format';
 import { markerName, sortMapMarkers } from '../game/map-marker.service';
 import { omniscientTraces } from '../game/omniscient.service';
 import { mapHiddenMentorAtCurrentCell } from '../game/map-hidden-advanced-profession.service';
+import { environmentStatus } from '../game/map-environment.service';
+import { environmentJobFormat } from './map-environment';
 
 const directionText = (point: NearbyPoint, x: number, y: number) => {
   const vertical = point.y > y ? '北' : point.y < y ? '南' : '';
@@ -91,18 +93,30 @@ if (point.trackable && point.type === '怪物' && point.code) markdown.addText('
   return Format.create().addMarkdown(markdown);
 };
 
-export const panelButtons = (resting = false, _autoBattleEnabled = false, blockedDirections: string[] = [], hiddenMentor: { professionCode: string; name: string } | null = null) => {
-  const blocked = (direction: string) => blockedDirections.includes(direction);
-  const dungeon = blockedDirections.length > 0;
-  const locationAction = dungeon ? { label: '脱离', command: '/脱离' } : { label: '寻怪', command: '/寻怪' };
-  const moveButton = (direction: '上' | '下' | '左' | '右') => ({ label: blocked(direction) ? '石墙' : direction, command: blocked(direction) ? '/面板' : `/移动 ${direction}`, style: blocked(direction) || resting ? undefined : 'blue' as const });
+export type DirectionPanelState = {
+  isDungeon: boolean;
+  directions: Record<'上' | '下' | '左' | '右', { canMove: boolean; reason?: string; label?: string; objectId?: string; destructible?: boolean }>;
+};
+export const panelButtons = (resting = false, _autoBattleEnabled = false, directionState?: DirectionPanelState, hiddenMentor: { professionCode: string; name: string } | null = null) => {
+  const locationAction = directionState?.isDungeon ? { label: '脱离', command: '/脱离' } : { label: '寻怪', command: '/寻怪' };
+  const moveButton = (direction: '上' | '下' | '左' | '右') => {
+    const state = directionState?.directions[direction];
+    const blocked = !state?.canMove;
+    return { label: blocked ? `${state?.label ?? '通路'}·阻挡` : direction, command: blocked ? '/面板' : `/移动 ${direction}`, style: blocked || resting ? undefined : 'blue' as const };
+  };
   const up = moveButton('上'); const down = moveButton('下'); const left = moveButton('左'); const right = moveButton('右');
   const buttons = Format.createButtonGroup()
-    .addRow().addButton(locationAction.label, locationAction.command, { type: 'command', autoEnter: true }).addButton(up.label, up.command, { type: 'command', autoEnter: true, style: up.style }).addButton('地图', '/地图', { type: 'command', autoEnter: true })
-    .addRow().addButton(left.label, left.command, { type: 'command', autoEnter: true, style: left.style }).addButton(resting ? '行动' : '休息', resting ? '/行动' : '/休息', { type: 'command', autoEnter: true }).addButton(right.label, right.command, { type: 'command', autoEnter: true, style: right.style })
-    .addRow().addButton('自动战斗', '/自动战斗', { type: 'command', autoEnter: true }).addButton(down.label, down.command, { type: 'command', autoEnter: true, style: down.style }).addButton('队伍', '/队伍', { type: 'command', autoEnter: true })
-    .addRow().addButton('角色', '/角色', { type: 'command', autoEnter: true }).addButton('装备', '/装备', { type: 'command', autoEnter: true }).addButton('背包', '/背包', { type: 'command', autoEnter: true }).addButton('技能', '/技能列表', { type: 'command', autoEnter: true }).addButton('好友', '/好友', { type: 'command', autoEnter: true })
-    .addRow().addButton('菜单', '/菜单', { type: 'command', autoEnter: true });
+    .addRow().addButton(locationAction.label, locationAction.command, { type: 'command', autoEnter: false }).addButton(up.label, up.command, { type: 'command', autoEnter: false, style: up.style }).addButton('地图', '/地图', { type: 'command', autoEnter: false })
+    .addRow().addButton(left.label, left.command, { type: 'command', autoEnter: false, style: left.style }).addButton(resting ? '行动' : '休息', resting ? '/行动' : '/休息', { type: 'command', autoEnter: false }).addButton(right.label, right.command, { type: 'command', autoEnter: false, style: right.style })
+    .addRow().addButton('自动战斗', '/自动战斗', { type: 'command', autoEnter: false }).addButton(down.label, down.command, { type: 'command', autoEnter: false, style: down.style }).addButton('队伍', '/队伍', { type: 'command', autoEnter: false })
+    .addRow().addButton('角色', '/角色', { type: 'command', autoEnter: false }).addButton('装备', '/装备', { type: 'command', autoEnter: false }).addButton('背包', '/背包', { type: 'command', autoEnter: false }).addButton('技能', '/技能列表', { type: 'command', autoEnter: false }).addButton('好友', '/好友', { type: 'command', autoEnter: false })
+    .addRow().addButton('菜单', '/菜单', { type: 'command', autoEnter: false });
+  const obstacles = new Map<string, { name: string; destructible: boolean }>();
+  for (const state of Object.values(directionState?.directions ?? {})) if (!state.canMove && state.objectId) obstacles.set(state.objectId, { name: state.label ?? '障碍', destructible: Boolean(state.destructible) });
+  for (const [id, obstacle] of obstacles) {
+    buttons.addRow().addButton(`查看${obstacle.name}`, `/景物详情 ${id}`, { type: 'command', autoEnter: false });
+    if (obstacle.destructible && !resting) buttons.addButton(`清理${obstacle.name}`, `/清理景物 ${id}`, { type: 'command', autoEnter: false, style: 'blue' });
+  }
   buttons.addRow().addButton('感知', '/感知', { type: 'command', autoEnter: false, style: 'blue' });
   if (hiddenMentor) buttons.addRow().addButton(`与${hiddenMentor.name}交谈`, `/隐藏导师 ${hiddenMentor.professionCode}`, { type: 'command', autoEnter: false, style: 'blue' });
   return buttons;
@@ -131,6 +145,8 @@ export default async () => {
   const [message] = useMessage();
   try {
     if ((await homePanel(event.current.UserId)).inHome) { const { homeFormat } = await import('./home'); await message.send({ format: await homeFormat(event.current.UserId) }); return; }
+    const environment = await environmentStatus(event.current.UserId);
+    if (environment.job) { await message.send({ format: environmentJobFormat(environment.job) }); return; }
     const travel = await travelStatus(event.current.UserId);
     if (travel && travel.remaining > 0) { await message.send({ format: travelPanel(travel) }); return; }
     if (travel) await completeTravel(event.current.UserId);
@@ -141,7 +157,7 @@ export default async () => {
       await sendWithTextFallback(message, await battlePanel(battle), `【${battle.mode === 'spar' ? `切磋＜${battle.turn}＞回合` : '战斗面板'}】\n${battle.members.map(member => `【${member.name}】HP ${member.hp}/${member.hpMax}｜MP ${member.mp}/${member.mpMax}`).join('\n')}${battle.spirits.length ? `\n场上灵兽：${battle.spirits.map(spirit => `${spirit.name} HP ${spirit.hp}/${spirit.hpMax}（${spirit.remainingTurns}回合）`).join('、')}` : ''}\n${battle.targets.map(target => `敌方 #${target.id} ${target.name} HP ${target.hp}/${target.hpMax}`).join('\n')}\n/攻击｜/技能 1｜${battle.mode === 'spar' ? '认输（/逃跑）' : '/道具 1｜/逃跑'}`);
     } catch (error) {
       if (!(error instanceof Error) || !error.message.includes('当前不在战斗中')) throw error;
-      const [nearby, autoBattle, blockedDirections, movement, trace, hiddenMentor] = await Promise.all([nearbyPoints(event.current.UserId), autoBattleConfig(event.current.UserId), blockedDungeonDirections(event.current.UserId), movementProfile(event.current.UserId), omniscientTraces(event.current.UserId), mapHiddenMentorAtCurrentCell(event.current.UserId)]);
+      const [nearby, autoBattle, directionState, movement, trace, hiddenMentor] = await Promise.all([nearbyPoints(event.current.UserId), autoBattleConfig(event.current.UserId), environmentDirectionState(event.current.UserId), movementProfile(event.current.UserId), omniscientTraces(event.current.UserId), mapHiddenMentorAtCurrentCell(event.current.UserId)]);
       const visiblePoints = movement.showPlayers ? nearby.points : nearby.points.filter(point => point.type !== '玩家');
       const targets = visiblePoints.length ? `\n感知内目标：\n${visiblePoints.map(point => `${point.type} ${point.name} · ${directionText(point, Number(nearby.character.pos_x), Number(nearby.character.pos_y))}${point.distance}${point.type === '怪物' && point.code ? ` [交互：/怪物交互 ${point.code}] [攻击：/怪物攻击 ${point.code}]` : point.distance === 0 && point.interaction?.type === '建筑' ? ' [进入]' : point.type === '玩家' && point.distance === 0 ? ' [互动]' : point.type === '玩家' && point.distance > 0 ? ' [前往]' : point.type !== '玩家' && point.distance === 0 && point.interaction ? ' [互动]' : point.type !== '玩家' && point.distance > 0 && movement.maximum >= point.distance ? ' [前往]' : ''}`).join('\n')}` : '\n感知内目标：\n空空如也';
       const x = Number(nearby.character.pos_x); const y = Number(nearby.character.pos_y);
@@ -149,7 +165,8 @@ export default async () => {
       const resting = nearby.character.activity_status !== 'active';
       const mapEntries = movement.showLandmarks ? nearby.landmarks : [];
       const mapText = nearby.mapUnlocked ? `\n\n地图标识：${mapEntries.length ? `\n${mapEntries.map(landmark => landmark.name).join('\n')}` : ''}` : '';
-      await sendWithTextFallback(message, outsidePanel('操作面板', location, movement.step, nearby.range, x, y, nearby.description, nearby.points, resting, nearby.landmarks, trace ?? '', movement.maximum, nearby.perceptionObscured, movement.showLandmarks, movement.showPlayers, nearby.mapUnlocked, nearby.character.activity_status, true).addButtonGroup(panelButtons(resting, Boolean(autoBattle.settings.enabled), blockedDirections, hiddenMentor)), `【操作面板】\n${location}${trace ? `\n\n${trace}` : ''}\n\n${nearby.description}${mapText}\n\n移动速度：（${movement.step}/${movement.maximum}）\n感知范围：${nearby.range}${nearby.perceptionObscured ? '\n> 压抑的黑暗干扰了你的感知' : ''}${targets}\n\n/移动 上｜/移动 下｜/移动 左｜/移动 右｜/探索｜/背包｜/感知${hiddenMentor ? `｜/隐藏导师 ${hiddenMentor.professionCode}` : ''}`);
+      const directionTextFallback = Object.entries(directionState.directions).map(([direction, state]) => state.canMove ? `/移动 ${direction}` : `${direction}：${state.label ?? '通路'}阻挡${state.objectId ? `（/景物详情 ${state.objectId}${state.destructible ? `；/清理景物 ${state.objectId}` : ''}）` : ''}`).join('｜');
+      await sendWithTextFallback(message, outsidePanel('操作面板', location, movement.step, nearby.range, x, y, nearby.description, nearby.points, resting, nearby.landmarks, trace ?? '', movement.maximum, nearby.perceptionObscured, movement.showLandmarks, movement.showPlayers, nearby.mapUnlocked, nearby.character.activity_status, true).addButtonGroup(panelButtons(resting, Boolean(autoBattle.settings.enabled), directionState, hiddenMentor)), `【操作面板】\n${location}${trace ? `\n\n${trace}` : ''}\n\n${nearby.description}${mapText}\n\n移动速度：（${movement.step}/${movement.maximum}）\n感知范围：${nearby.range}${nearby.perceptionObscured ? '\n> 压抑的黑暗干扰了你的感知' : ''}${targets}\n\n${directionTextFallback}｜/探索｜/背包｜/感知${hiddenMentor ? `｜/隐藏导师 ${hiddenMentor.professionCode}` : ''}`);
     }
   } catch (error) {
     logger.error({ err: error, userId: event.current.UserId }, 'open panel failed');
@@ -161,8 +178,8 @@ const showRestPanel = async (message: any, qqUserId: string, text: string) => {
   if ((await homePanel(qqUserId)).inHome) { const { homeFormat } = await import('./home'); await message.send({ format: await homeFormat(qqUserId, text) }); return; }
   const [nearby, movement, trace, hiddenMentor] = await Promise.all([nearbyPoints(qqUserId), movementProfile(qqUserId), omniscientTraces(qqUserId), mapHiddenMentorAtCurrentCell(qqUserId)]); const resting = nearby.character.activity_status !== 'active';
   const autoBattle = await autoBattleConfig(qqUserId);
-  const blockedDirections = await blockedDungeonDirections(qqUserId);
-  const panel = outsidePanel('操作面板', currentLocationText(nearby.character), movement.step, nearby.range, Number(nearby.character.pos_x), Number(nearby.character.pos_y), text, nearby.points, resting, nearby.landmarks, trace ?? '', movement.maximum, nearby.perceptionObscured, movement.showLandmarks, movement.showPlayers, nearby.mapUnlocked, nearby.character.activity_status, true).addButtonGroup(panelButtons(resting, Boolean(autoBattle.settings.enabled), blockedDirections, hiddenMentor));
+  const directionState = await environmentDirectionState(qqUserId);
+  const panel = outsidePanel('操作面板', currentLocationText(nearby.character), movement.step, nearby.range, Number(nearby.character.pos_x), Number(nearby.character.pos_y), text, nearby.points, resting, nearby.landmarks, trace ?? '', movement.maximum, nearby.perceptionObscured, movement.showLandmarks, movement.showPlayers, nearby.mapUnlocked, nearby.character.activity_status, true).addButtonGroup(panelButtons(resting, Boolean(autoBattle.settings.enabled), directionState, hiddenMentor));
   await sendWithTextFallback(message, panel, `【操作面板】\n${text}`);
 };
 export const restHandler = async () => { const [event] = useEvent(); const [message] = useMessage(); try { const result = await startRest(event.current.UserId); await showRestPanel(message, event.current.UserId, result.message); } catch (error) { await message.send({ format: messageFormat('无法休息', error instanceof Error ? error.message : '请稍后重试。') }); } };

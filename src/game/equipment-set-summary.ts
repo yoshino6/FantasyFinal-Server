@@ -2,7 +2,7 @@ import { armorSetDescription, armorSetFromRows } from './armor-set';
 import { epicLoadoutFromRows } from './epic-equipment.service';
 import { epicSetProfile, type EpicSetCode } from '../config/epic-forging';
 
-const epicEffects: Record<EpicSetCode, [string,string]> = {
+export const epicSetThresholdEffects: Record<EpicSetCode, [string,string]> = {
   mountainheart_regalia: [
     '地脉承压：每回合首次承受技能直击获得1层岩压，最多3层；每层使所受技能直击伤害降低2%。',
     '断层壁障：3层岩压转为12%最大生命护盾与20%控制抗性，持续2回合；壁障期间暂停积累岩压。'
@@ -28,7 +28,7 @@ export const equipmentSetSummary = (items: readonly {slot:string;weapon_type?:st
     entries.push({title:`猩红王冠 ${epic.crimsonCount}/5件`,effects:[`残光护持：每场 PVE 首次受直接伤害后生命低于40%时，获得${epic.crimsonCount>=2?8:5}%最大生命护盾（1回合）。`,...(epic.crimsonCount>=5?['5件 · 非战斗休息恢复速度提高10%。']:[])]});
   }
   if (epic.setCode && epic.setCode!=='crimson_crown' && epic.setCount>=3) {
-    const effects = epicEffects[epic.setCode];
+    const effects = epicSetThresholdEffects[epic.setCode];
     entries.push({title:`${epicSetProfile(epic.setCode)?.name ?? epic.setCode} ${epic.setCount}/5件`,effects:[`3件 · ${effects[0]}`,...(epic.setCount>=5?[`5件 · ${effects[1]}`]:[])]});
   }
   return entries;

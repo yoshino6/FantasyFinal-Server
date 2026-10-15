@@ -8,6 +8,7 @@ import { armorSetsFor } from './armor-set';
 import { recalculateCharacterStats } from './character.service';
 import { neutralTalentSnapshot } from './talent-data';
 import { assertNoNegotiation } from './negotiation.service';
+import { assertEnvironmentIdle } from './map-environment.service';
 import { executeHiddenCombat, HiddenBattleError, hiddenEndTurn, hiddenReorder, hiddenDeviceSnapshot, hiddenNativeDevice } from './hidden-combat';
 import { hiddenBattleContext, submitHiddenDraft, initializeHiddenBattleUnits, type HiddenTicket } from './hidden-battle.service';
 import { isHiddenSkill } from './hidden-profession.config';
@@ -581,10 +582,12 @@ const resolveAction = async (connection: PoolConnection, actor: PvpCharacter, ta
 
 export const cityPvp = async (qqUserId: string, targetGameId: number, confirmed = false) => withTransaction(async connection => {
   const attacker = await characterFor(connection, qqUserId); const town = await townRegion(connection);
+  await assertEnvironmentIdle(connection, Number(attacker.id));
   if (Number(attacker.current_region_id) !== Number(town.id)) throw new Error('只有在百纳镇内才能发起城镇 PvP。');
   if (await isInHome(connection, Number(attacker.id))) throw new Error('你正在自己的家园中，无法主动发起 PvP。');
   if (attacker.activity_status === 'detained') throw new Error(detentionMessage(attacker.detained_until));
   const [targets] = await connection.execute<PvpCharacter[]>('SELECT * FROM characters WHERE game_id=? AND npc_code IS NULL FOR UPDATE', [targetGameId]); const target = targets[0];
+  if (target) await assertEnvironmentIdle(connection, Number(target.id));
   if (!target || Number(target.id) === Number(attacker.id) || Number(target.current_region_id) !== Number(town.id) || Number(target.pos_z) !== Number(attacker.pos_z) || Math.abs(Number(target.pos_x) - Number(attacker.pos_x)) + Math.abs(Number(target.pos_y) - Number(attacker.pos_y)) > 1) throw new Error('目标不在你相邻的城镇格子中。');
   await assertNoNegotiation(connection, Number(attacker.id)); await assertNoNegotiation(connection, Number(target.id));
   await assertPvpDefeatUnprotected(connection, Number(target.id));
@@ -617,10 +620,12 @@ export const cityPvp = async (qqUserId: string, targetGameId: number, confirmed 
 /** 城镇外的同地图 PvP；野外没有通缉确认，仍要求目标处于感知范围内。 */
 export const fieldPvp = async (qqUserId: string, targetGameId: number) => withTransaction(async connection => {
   const attacker = await characterFor(connection, qqUserId);
+  await assertEnvironmentIdle(connection, Number(attacker.id));
   if (await isInHome(connection, Number(attacker.id))) throw new Error('你正在自己的家园中，无法主动发起 PvP。');
   if (attacker.activity_status === 'detained') throw new Error(detentionMessage(attacker.detained_until));
   const [targets] = await connection.execute<PvpCharacter[]>('SELECT * FROM characters WHERE game_id=? AND npc_code IS NULL FOR UPDATE', [targetGameId]);
   const target = targets[0];
+  if (target) await assertEnvironmentIdle(connection, Number(target.id));
   const distance = target ? Math.abs(Number(target.pos_x) - Number(attacker.pos_x)) + Math.abs(Number(target.pos_y) - Number(attacker.pos_y)) : Infinity;
   if (!target || Number(target.id) === Number(attacker.id) || Number(target.current_region_id) !== Number(attacker.current_region_id) || Number(target.pos_z) !== Number(attacker.pos_z) || distance > perceptionRange(attacker)) throw new Error('目标已经离开你的感知范围。');
   await assertNoNegotiation(connection, Number(attacker.id)); await assertNoNegotiation(connection, Number(target.id));
@@ -731,7 +736,9 @@ const refreshPvpPanel = async (connection: PoolConnection, fighters: PvpCharacte
 /** 开始玩家回合制战斗；城镇内的首次攻击仍需确认并会产生通缉。 */
 export const startPvpBattle = async (qqUserId: string, targetGameId: number, confirmed = false) => withTransaction(async connection => {
   const attacker = await characterFor(connection, qqUserId); const [regions] = await connection.execute<(RowDataPacket & { code: string })[]>('SELECT code FROM map_regions WHERE id=? LIMIT 1', [attacker.current_region_id]); const regionCode = regions[0]?.code ?? '';
+  await assertEnvironmentIdle(connection, Number(attacker.id));
   const [targets] = await connection.execute<PvpCharacter[]>('SELECT * FROM characters WHERE game_id=? AND npc_code IS NULL FOR UPDATE', [targetGameId]); const defender = targets[0];
+  if (defender) await assertEnvironmentIdle(connection, Number(defender.id));
   const distance = defender ? Math.abs(Number(defender.pos_x) - Number(attacker.pos_x)) + Math.abs(Number(defender.pos_y) - Number(attacker.pos_y)) : Infinity;
   const range = regionCode === 'dark_forest_dungeon' ? 1 : perceptionRange(attacker);
   if (!defender || Number(defender.id) === Number(attacker.id) || Number(defender.current_region_id) !== Number(attacker.current_region_id) || Number(defender.pos_z) !== Number(attacker.pos_z) || distance > range) throw new Error('目标已经离开你的感知范围。');
@@ -772,6 +779,8 @@ export const startAmbushPvpBattle = async (attackerCharacterId: number, defender
   const attacker = fighters.find(row => Number(row.id) === Number(attackerCharacterId));
   const defender = fighters.find(row => Number(row.id) === Number(defenderCharacterId));
   if (!attacker || !defender || Number(attacker.id) === Number(defender.id)) throw new Error('伏击目标已经离开战场。');
+  await assertEnvironmentIdle(connection, Number(attacker.id));
+  await assertEnvironmentIdle(connection, Number(defender.id));
   await assertNoNegotiation(connection, Number(attacker.id)); await assertNoNegotiation(connection, Number(defender.id));
   await assertPvpDefeatUnprotected(connection, Number(defender.id));
   if (attacker.activity_status !== 'active' || defender.activity_status !== 'active') throw new Error('伏击条件已失效，战场中的一方无法继续战斗。');

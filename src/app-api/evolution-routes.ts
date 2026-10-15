@@ -2,6 +2,7 @@ import type koaRouter from 'koa-router';
 import type { AppSession } from '../game/app-channel.service';
 import { appSessionQqUser } from '../game/app-channel.service';
 import { confirmEvolutionMutation, evolutionMutation, evolutionStatus, previewEvolutionMutation } from './evolution.service';
+import { confirmEvolutionProgression, previewEvolutionProgression } from './evolution-progression.service';
 
 type Context = any;
 type Dependencies = {
@@ -34,6 +35,20 @@ const failure = (ctx: Context, error: unknown, apiError: Dependencies['apiError'
 export const registerEvolutionApiRoutes = (router: koaRouter, apiPrefix: string, dependencies: Dependencies) => {
   const path = (suffix: string) => `${apiPrefix}/evolution${suffix}`;
   const { requireSession, parseBody, apiError } = dependencies;
+  router.post(path('/progression/preview'), async (ctx: Context) => {
+    const session = await requireSession(ctx); if (!session) return;
+    try {
+      ctx.body = { ok: true, ...await previewEvolutionProgression(await appSessionQqUser(session), await parseBody(ctx)), serverTime: new Date().toISOString() };
+    } catch (error) { failure(ctx, error, apiError); }
+  });
+  router.post(path('/progression/confirm'), async (ctx: Context) => {
+    const session = await requireSession(ctx); if (!session) return;
+    try {
+      const body = await parseBody(ctx);
+      const result = await confirmEvolutionProgression(await appSessionQqUser(session), String(body.token ?? ''), String(body.idempotencyKey ?? ''));
+      ctx.body = { ok: true, result, refresh: ['summary', 'evolution', 'character', 'inventory'], serverTime: new Date().toISOString() };
+    } catch (error) { failure(ctx, error, apiError); }
+  });
   router.get(path(''), async (ctx: Context) => {
     const session = await requireSession(ctx); if (!session) return;
     try {

@@ -1,3 +1,5 @@
+import { forgePrimaryKeys } from './equipment-primary';
+export { forgePrimaryKeys } from './equipment-primary';
 const rejectRetiredWorkshop = ():void => { throw new Error('此旧版执行指令已停用，请重新从锻造面板预览并确认。'); };
 import { armorWorkshopNames, lowForgeMaterials, allocateLowMaterials } from './equipment-workshop-rules';
 import { forgeAchievementFacts } from './achievement-production';
@@ -284,18 +286,6 @@ const forgeRarity = (blacksmithLevel: number) => {
   const weights = forgeRarityWeights(blacksmithLevel);
   let roll = Math.random() * weights.reduce((sum, [, weight]) => sum + weight, 0);
   return weights.find(([, weight]) => (roll -= weight) <= 0)?.[0] ?? '普通';
-};
-/** 打造装备的主属性由装备类型决定。 */
-export const forgePrimaryKeys = (category: string, subtype: string | null | undefined): string[] => {
-  if (category === '武器' || category === '副手') {
-    if (subtype === '盾牌') return ['physicalDefense', 'magicDefense'];
-    if (subtype === '长剑') return ['physicalAttack'];
-    if (subtype === '法杖' || subtype === '法书' || subtype === '法球') return ['magicAttack'];
-    if (subtype === '匕首') return ['physicalAttack', 'magicAttack'];
-    return ['physicalAttack'];
-  }
-  // 五种甲的双防均为主属性且基准相同，甲类差异由附带属性和套装提供。
-  return ['physicalDefense', 'magicDefense'];
 };
 const baseForgeEffect = forgedPrimaryStats;
 type ForgeMaterialProfile = { key: string; secondaryKey?: string; additionalKeys?: string[]; min: number; max: number; tier: 'small' | 'exclusive'; fixedValue?: number; kind?: 'ordinary' | 'combatPercent' | 'corePercent' | 'finalDamage' };

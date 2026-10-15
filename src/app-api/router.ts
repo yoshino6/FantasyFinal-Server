@@ -9,6 +9,7 @@ import { registerEvolutionApiRoutes } from './evolution-routes';
 import { registerAdvancedProfessionApiRoutes } from './advanced-profession-routes';
 import { registerMarketApiRoutes } from './market-routes';
 import { registerSkillApiRoutes } from './skill-routes';
+import { registerEquipmentDetailApiRoutes } from './equipment-detail-routes';
 import { randomUUID } from 'node:crypto';
 import { getAppApiConfig } from '../config/app-api';
 import {
@@ -26,6 +27,8 @@ import { appCommandCategories, appCommandCatalogFor, findAppCommandById, isAppCo
 import { getCharacter } from '../game/character.service';
 import { executeCoreGameCommand, listCoreCommandCatalog } from '../core-command-bridge';
 import { coreInteractionPresentation, coreWindowCommand } from './core-interaction-presentation';
+import { appMovementNeedsStory } from './movement-story';
+import { assertExpectedLocalStep, LocalExplorationError, isLocalPosition } from '../game/local-exploration-route';
 import {
   CoreInteractionActionError,
   executeIssuedCoreInteractionAction,
@@ -57,6 +60,8 @@ import {
   issueRealtimeTicket
 } from './social.service';
 import { friendList, friendRequests, oathReleaseRequests, oathRequests, oathStatus } from '../game/social.service';
+import { getPool } from '../database/pool';
+import { socialIdentities, socialAffinityProgress } from './social-presentation';
 import {
   autoBattleConfig,
   autoBattleSkills,
@@ -220,7 +225,7 @@ const signedCoreResponse = async (
 ) => {
   const issued = await issueCoreInteractionActions({ session, sessionToken, originCommand, execution, blockWebProtectedWrites });
   const first = issued.messages[0] ?? { text: '命令已执行。', buttons: [] };
-  return { ...first, ...issued };
+  return { ...first, ...issued, ...(execution.movementVisual ? { movementVisual: execution.movementVisual } : {}) };
 };
 
 /**
@@ -269,11 +274,13 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
     registerAdvancedProfessionApiRoutes(router, apiPrefix, { requireSession, parseBody, apiError });
     registerMarketApiRoutes(router, apiPrefix, { requireSession, parseBody, apiError });
     registerSkillApiRoutes(router, apiPrefix, { requireSession, parseBody, apiError });
+    registerEquipmentDetailApiRoutes(router, apiPrefix, { requireSession, apiError });
   }
 
   router.get(apiPath('/health'), async (ctx: Context) => {
     ctx.type = 'application/json';
-    ctx.body = { ok: true, service: 'fantasy-final-game-core', time: new Date().toISOString() };
+    ctx.body = { ok: true, service: 'fantasy-final-game-core', time: new Date().toISOString(),
+      protocols: { explorationEnvironment: 1, explorationSurface: 1 }, environmentGenerators: [1, 2] };
   });
 
   router.post(apiPath('/register'), async (ctx: Context) => {
@@ -731,6 +738,110 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
     }
   });
 
+  /** Planning reads saved state without advancing a story or moving a player. */
+  router.get(apiPath('/explore/local-map'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const { localExplorationMap } = await import('../game/adventure.service');
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, ...await localExplorationMap(await appSessionQqUser(session), undefined, ctx.query?.view === 'travel' ? 'travel' : undefined) };
+    } catch (error) {
+      apiError(ctx, error instanceof LocalExplorationError ? error.status : 400, error instanceof Error ? error.message : '无法读取附近通路。');
+      if (error instanceof LocalExplorationError) ctx.body.code = error.code;
+    }
+  });
+
+  router.get(apiPath('/explore/environment'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const { environmentInspect } = await import('../game/map-environment.service');
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, ...await environmentInspect(await appSessionQqUser(session)) };
+    } catch (error) { apiError(ctx, 400, error instanceof Error ? error.message : '无法读取附近景物。'); }
+  });
+
+  for (const action of ['clear', 'cancel', 'settle'] as const) router.post(apiPath(`/explore/environment/${action}`), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const body = await parseBody(ctx);
+      const user = await appSessionQqUser(session);
+      const environment = await import('../game/map-environment.service');
+      if (action === 'clear' && (typeof body.id !== 'string' || body.id.length > 160)) throw new Error('环境物件编号无效。');
+      if (action === 'settle' && body.objectId !== undefined && (typeof body.objectId !== 'string' || body.objectId.length > 160)) throw new Error('环境物件编号无效。');
+      const result = action === 'clear' ? await environment.environmentStartClear(user, body.id as string) :
+        action === 'cancel' ? await environment.environmentCancelClear(user) : await environment.environmentFinishClear(user, body.objectId as string | undefined);
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, ...result, panel: await appQuickPanel(session), refresh: ['summary', 'nearby', 'inventory'], serverTime: new Date().toISOString() };
+    } catch (error) { apiError(ctx, 400, error instanceof Error ? error.message : '清理操作失败。'); }
+  });
+
+  router.post(apiPath('/explore/route/preview'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const body = await parseBody(ctx);
+      const target = { x: body.x, y: body.y, z: body.z };
+      if (!isLocalPosition(target)) throw new LocalExplorationError('INVALID_POSITION', '目标坐标必须是三个安全整数（x、y、z）。');
+      const { localExplorationRoutePreview } = await import('../game/adventure.service');
+      const plan = await localExplorationRoutePreview(await appSessionQqUser(session), target.x, target.y, target.z);
+      ctx.type = 'application/json';
+      ctx.body = { ok: true, ...plan };
+    } catch (error) {
+      apiError(ctx, error instanceof LocalExplorationError ? error.status : 400, error instanceof Error ? error.message : '无法规划附近路线。');
+      if (error instanceof LocalExplorationError) ctx.body.code = error.code;
+    }
+  });
+
+  router.post(apiPath('/explore/route/step'), async (ctx: Context) => {
+    const session = await requireSession(ctx);
+    if (!session) return;
+    try {
+      const body = await parseBody(ctx);
+      const target = { x: body.x, y: body.y, z: body.z };
+      if (!isLocalPosition(target) || !isLocalPosition(body.expectedFrom, true)) throw new LocalExplorationError('INVALID_POSITION', '移动坐标或路线起点凭据无效。');
+      assertExpectedLocalStep(body.expectedFrom, target, body.expectedFrom);
+      const qqUserId = await appSessionQqUser(session);
+      const { localExplorationRouteStep, localExplorationPosition, battleStatus } = await import('../game/adventure.service');
+      if (apiPrefix === '/api/web/v1' && await appMovementNeedsStory(qqUserId)) {
+        const battle = await battleStatus(qqUserId).catch(() => null);
+        if (!battle?.targets?.length) {
+          assertExpectedLocalStep(await localExplorationPosition(qqUserId), target, body.expectedFrom);
+          // Keep the same Core opening/tour handoff as the legacy grid move.
+          // Story movement is never presented as a successful route step.
+          const command = `/前往 ${target.x} ${target.y} ${target.z}`;
+          const execution = await executeCoreGameCommand({
+            requestId: `web-route-opening:${randomUUID()}`,
+            actor: { provider: 'app', subject: qqUserId, displayName: session.displayName },
+            conversation: { scope: 'private', id: qqUserId }, command, source: 'message'
+          });
+          const signed = await signedCoreResponse(session, bearer(ctx), command, execution, true);
+          const panel = await appQuickPanel(session);
+          ctx.type = 'application/json';
+          ctx.body = { ok: true, ...signed, kind: signed.presentation === 'story' ? 'story' : 'story_required', moved: false,
+            position: await localExplorationPosition(qqUserId), panel, refresh: ['summary', 'story', 'nearby'] };
+          return;
+        }
+      }
+      const result = await localExplorationRouteStep(qqUserId, target.x, target.y, target.z, body.expectedFrom, apiPrefix === '/api/web/v1' && body.compact === true) as any;
+      ctx.type = 'application/json';
+      ctx.body = {
+        ok: true, kind: String(result.kind ?? 'event'), text: String(result.text ?? '你移动到了目标位置。'),
+        position: result.position, moved: result.moved === true,
+        ...(result.localMap ? { localMap: result.localMap } : {}),
+        ...(Array.isArray(result.targets) ? { interactionTargets: result.targets.map((item: any) => ({
+          type: String(item.type), id: String(item.id), name: String(item.name), description: String(item.description ?? '')
+        })) } : {}),
+        ...(result.stepState ? { stepState: result.stepState } : { panel: await appQuickPanel(session) }), serverTime: new Date().toISOString()
+      };
+    } catch (error) {
+      apiError(ctx, error instanceof LocalExplorationError ? error.status : 400, error instanceof Error ? error.message : '路线移动失败。');
+      if (error instanceof LocalExplorationError) ctx.body.code = error.code;
+    }
+  });
+
   /**
    * 探索方格的即时移动。与 /command 中的“前往坐标”分开，避免网页点击
    * 近处格子时误创建远距离计时行程；具体通行、感知、遭遇和队伍规则由
@@ -750,15 +861,12 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
       }
       const qqUserId = await appSessionQqUser(session);
       const { moveToLocalCoordinate, battleStatus } = await import('../game/adventure.service');
-      const { openingStatus, beginOpening } = await import('../game/opening.service');
-      const opening = apiPrefix === '/api/web/v1' ? await openingStatus(qqUserId) : null;
-      if (opening && opening.state !== 'completed') {
+      if (apiPrefix === '/api/web/v1' && await appMovementNeedsStory(qqUserId)) {
         const battle = await battleStatus(qqUserId).catch(() => null);
         if (!battle?.targets?.length) {
-          // The first grid move starts the same opening route as QQ movement;
-          // it does not also change coordinates or advance an existing scene.
-          if (opening.state === 'armed') await beginOpening(qqUserId, 'move');
-          const command = '/注册';
+          // Execute the requested move through Core so every opening/tour
+          // middleware can start or restore its scene before moving the player.
+          const command = `/前往 ${x} ${y} ${z}`;
           const execution = await executeCoreGameCommand({
             requestId: `web-opening:${randomUUID()}`,
             actor: { provider: 'app', subject: qqUserId, displayName: session.displayName },
@@ -770,7 +878,7 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
           const panel = await appQuickPanel(session);
           ctx.type = 'application/json';
           ctx.body = {
-            ok: true, ...signed, kind: 'story', presentation: 'story',
+            ok: true, ...signed, kind: signed.presentation === 'story' ? 'story' : 'move',
             ...(panel.summary?.position ? { position: panel.summary.position } : {}),
             panel, refresh: ['summary', 'story', 'nearby']
           };
@@ -1007,7 +1115,7 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
         return;
       }
       const qqUserId = await appSessionQqUser(session);
-      const { moveTo } = await import('../game/adventure.service');
+      const { moveTo, travelStatus } = await import('../game/adventure.service');
       const planned = await moveTo(qqUserId, x, y, z) as any;
       // 跨区域路线本体仍保留服务层的路线签名校验；侧栏的确认就是网页层的二次确认。
       const result = planned?.kind === 'travel_confirmation'
@@ -1017,14 +1125,19 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
         apiError(ctx, 409, '路线在确认时发生变化，请重新点击前往。');
         return;
       }
+      const travel = result?.kind === 'travel' ? await travelStatus(qqUserId).catch(() => null) : null;
+      const character = result?.character;
+      const position = character ? { x: Number(character.pos_x), y: Number(character.pos_y), z: Number(character.pos_z), regionId: Number(character.current_region_id) } : result.position;
       const panel = await appQuickPanel(session).catch(() => null);
       ctx.type = 'application/json';
       ctx.body = {
         ok: true,
         kind: String(result?.kind ?? 'travel'),
         text: result?.kind === 'travel' ? `已开始前往${result.destinationName ?? result.regionName ?? '目标区域'}，预计 ${result.seconds} 秒。` : String(result?.text ?? '路线已安排。'),
-        position: { x, y, z },
+        position,
         remaining: Number(result?.remaining ?? result?.seconds ?? 0),
+        ...(travel ? { travel } : {}),
+        ...(result?.movementVisual ? { movementVisual: result.movementVisual } : {}),
         panel,
         serverTime: new Date().toISOString()
       };
@@ -1041,12 +1154,15 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
       const qqUserId = await appSessionQqUser(session);
       const { cancelTravel } = await import('../game/adventure.service');
       const cancelled = await cancelTravel(qqUserId);
+      const character = cancelled.character;
+      const position = { x: Number(character.pos_x), y: Number(character.pos_y), z: Number(character.pos_z), regionId: Number(character.current_region_id) };
       const panel = await appQuickPanel(session).catch(() => null);
       ctx.type = 'application/json';
       ctx.body = {
         ok: true,
         kind: 'cancelled',
         text: cancelled.activityType === 'hunt' ? '寻怪已取消。' : '移动已取消。',
+        position,
         panel,
         serverTime: new Date().toISOString()
       };
@@ -1061,9 +1177,11 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
     if (!session) return;
     try {
       const qqUserId = await appSessionQqUser(session);
-      const { completeTravel, travelStatus } = await import('../game/adventure.service');
+      const { completeTravel, travelStatus, localExplorationPosition } = await import('../game/adventure.service');
       const result = await completeTravel(qqUserId);
       const pending = result ? null : await travelStatus(qqUserId);
+      const character = result?.character;
+      const position = character ? { x: Number(character.pos_x), y: Number(character.pos_y), z: Number(character.pos_z), regionId: Number(character.current_region_id) } : pending?.position ?? await localExplorationPosition(qqUserId);
       const panel = await appQuickPanel(session).catch(() => null);
       ctx.type = 'application/json';
       ctx.body = {
@@ -1071,6 +1189,8 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
         kind: result?.kind ?? (pending ? 'pending' : 'idle'),
         text: result ? String(result.text ?? '已抵达目的地。') : pending ? '行程仍在进行中。' : '当前没有待结算的行程。',
         remaining: pending?.remaining ?? 0,
+        position,
+        ...(pending ? { travel: pending } : {}),
         panel,
         serverTime: new Date().toISOString()
       };
@@ -1302,14 +1422,15 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
         oathRequests(qqUserId),
         oathReleaseRequests(qqUserId)
       ]);
+      const identities = await socialIdentities(await getPool(), [...friends, ...incomingFriends, ...incomingOaths, ...incomingReleases, ...(oath ? [oath] : [])].map(item => Number(item.game_id)));
       ctx.type = 'application/json';
       ctx.body = {
         ok: true,
-        friends: friends.map(item => ({ name: String(item.name), gameId: Number(item.game_id), status: String(item.status), affinity: Number(item.affinity), stage: String((item.stage as any)?.title ?? item.stage) })),
-        friendRequests: incomingFriends.map(item => ({ id: Number(item.id), name: String(item.name), gameId: Number(item.game_id), createdAt: new Date(item.created_at).toISOString() })),
-        oath: oath ? { id: Number(oath.id), name: String(oath.name), gameId: Number(oath.game_id), status: String(oath.status), affinity: Number(oath.affinity), stage: String((oath.stage as any)?.title ?? oath.stage) } : null,
-        oathRequests: incomingOaths.map(item => ({ id: Number(item.id), name: String(item.name), gameId: Number(item.game_id), affinity: Number(item.affinity), stage: String((item.stage as any)?.title ?? item.stage), expiresAt: new Date(item.expires_at).toISOString() })),
-        oathReleaseRequests: incomingReleases.map(item => ({ id: Number(item.id), name: String(item.name), gameId: Number(item.game_id), expiresAt: new Date(item.expires_at).toISOString() }))
+        friends: friends.map(item => ({ ...identities.get(Number(item.game_id)), name: String(item.name), gameId: Number(item.game_id), status: String(item.status), affinity: Number(item.affinity), stage: String((item.stage as any)?.title ?? item.stage), affinityProgress: socialAffinityProgress(item.stage) })),
+        friendRequests: incomingFriends.map(item => ({ ...identities.get(Number(item.game_id)), id: Number(item.id), name: String(item.name), gameId: Number(item.game_id), createdAt: new Date(item.created_at).toISOString() })),
+        oath: oath ? { ...identities.get(Number(oath.game_id)), id: Number(oath.id), name: String(oath.name), gameId: Number(oath.game_id), status: String(oath.status), affinity: Number(oath.affinity), stage: String((oath.stage as any)?.title ?? oath.stage), affinityProgress: socialAffinityProgress(oath.stage) } : null,
+        oathRequests: incomingOaths.map(item => ({ ...identities.get(Number(item.game_id)), id: Number(item.id), name: String(item.name), gameId: Number(item.game_id), affinity: Number(item.affinity), stage: String((item.stage as any)?.title ?? item.stage), affinityProgress: socialAffinityProgress(item.stage), expiresAt: new Date(item.expires_at).toISOString() })),
+        oathReleaseRequests: incomingReleases.map(item => ({ ...identities.get(Number(item.game_id)), id: Number(item.id), name: String(item.name), gameId: Number(item.game_id), expiresAt: new Date(item.expires_at).toISOString() }))
       };
     } catch (error) {
       apiError(ctx, 400, error instanceof Error ? error.message : '读取社交摘要失败。');

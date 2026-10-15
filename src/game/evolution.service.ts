@@ -233,6 +233,7 @@ export const repairEvolutionProgress = async (connection: EvolutionConnection, c
 const materialsForLevel = (level: number, shaping = false) => ({ active: shaping ? 8 : 3 + Math.max(0, Math.floor((level - 21) / 3)), medium: shaping ? 5 : 2 + Math.max(0, Math.floor((level - 21) / 4)), catalyst: shaping ? 5 : level <= 23 ? 1 : level <= 26 ? 2 : 3 });
 export const evolutionInjectionMaterials = (level: number, code: InjectionCode) => materialsForLevel(level, code === 'shaping');
 const injectionAvailable = (code: InjectionCode, level: number) => code === 'shaping' ? level === 29 : level >= injectionRules[code].unlockLevel && level < 29;
+export const evolutionInjectionParts = (code: InjectionCode) => injectionRules[code].parts;
 const consumeItems = async (connection: PoolConnection, characterId: number, costs: Record<string, number>) => {
   const codes = Object.keys(costs); const placeholders = codes.map(() => '?').join(',');
   const [rows] = await connection.execute<InventoryRow[]>(`SELECT i.code,pi.quantity,pi.item_id FROM player_inventory pi JOIN item_definitions i ON i.id=pi.item_id
@@ -378,6 +379,42 @@ const injectEvolutionOnConnection = async (connection: PoolConnection, qqUserId:
   return { characterId: Number(character.id), name: character.name, code, injectionName: injectionNames[code], fromLevel: currentCap, toLevel: nextLevel, gainedSkillPoints: 1, mutation, finalTraits: finalTraits.map(trait => trait.mutation_name), symbiosisTrait: symbiosisTrait ? symbiosisTraits[symbiosisTrait] : null, pressure: clamp(Number(profile.adaptation_pressure) + rule.pressure, 0, 8), stability: clamp(Number(profile.stability) + rule.stability, 0, 100) };
 };
 export const injectEvolution = (qqUserId: string, code: InjectionCode, requestedPart?: BodyPart, requestedSymbiosisTrait?: SymbiosisTraitCode) => withTransaction(connection => injectEvolutionOnConnection(connection, qqUserId, code, requestedPart, requestedSymbiosisTrait));
+export const injectEvolutionInTransaction = (connection: PoolConnection, qqUserId: string, code: InjectionCode, part?: BodyPart, trait?: SymbiosisTraitCode) =>
+  injectEvolutionOnConnection(connection, qqUserId, code, part, trait);
+
+/** Preview never consumes materials, rolls mutations or awards levels. */
+export const previewEvolutionInjectionInTransaction = async (connection: PoolConnection, qqUserId: string, code: InjectionCode, part?: BodyPart, trait?: SymbiosisTraitCode) => {
+  const character = await characterFor(connection, qqUserId, true);
+  const profile = await ensureEvolutionProfile(connection, character, true);
+  if (!profile) throw new Error('进化之种尚未回应你。');
+  const level = Number(profile.unlocked_level);
+  if (!Object.hasOwn(injectionRules, code) || !injectionAvailable(code, level)) throw new Error('这支针剂不能用于当前生长结。');
+  const rule = injectionRules[code];
+  if (Number(character.level) !== level || Number(character.experience) < experienceRequiredForLevel(level)) throw new Error(`先让 Lv.${level} 的经验达到满值，才能注射针剂。`);
+  if (part && !rule.parts.includes(part)) throw new Error('这支针剂不能用于所选部位。');
+  const symbiosisTrait = code === 'symbiosis' ? profile.symbiosis_trait_code ?? trait ?? null : null;
+  if (code === 'symbiosis' && (!symbiosisTrait || !symbiosisTraitCodes.includes(symbiosisTrait))) throw new Error('请先选择一项共生微被动。');
+  const finalTraits = code === 'shaping' ? await selectableFinalTraits(connection, Number(character.id), true) : [];
+  const selectedIds = jsonNumberList(profile.final_traits_json).filter(id => finalTraits.some(item => Number(item.id) === id));
+  if (code === 'shaping' && selectedIds.length !== Math.min(3, finalTraits.length)) throw new Error(`请先在自我定义中选择 ${Math.min(3, finalTraits.length)} 项定型特征。`);
+  const costs: Record<string, number> = {};
+  if (Number(profile.injection_count) > 0) {
+    if (Number((await itemQuantity(connection, Number(character.id), injectionItemCodes[code], true))?.quantity ?? 0) > 0) costs[injectionItemCodes[code]] = 1;
+    else {
+      const materials = materialsForLevel(level, code === 'shaping');
+      const [enzymes] = await connection.execute<RowDataPacket[]>("SELECT 1 FROM player_mutations WHERE character_id=? AND mutation_code='mutation_organ_stable_11' AND mutation_state IN ('stable','deviation','rare') LIMIT 1", [character.id]);
+      Object.assign(costs, { evolution_active_sample: Math.max(1, materials.active - (enzymes[0] ? 1 : 0)), evolution_stable_medium: materials.medium, evolution_catalyst: materials.catalyst });
+    }
+  }
+  for (const [itemCode, quantity] of Object.entries(costs)) if (Number((await itemQuantity(connection, Number(character.id), itemCode, true))?.quantity ?? 0) < quantity) throw new Error(`缺少材料：【${evolutionItemName(itemCode)}】`);
+  return { kind: 'inject' as const, name: injectionNames[code], code, fromLevel: level, toLevel: level + 1, costs,
+    injectionCount: Number(profile.injection_count), part: part ?? null, parts: rule.parts,
+    fixedBonus: fixedBonusFor(code, character), mutationChance: rule.chance, stableChance: rule.stableChance,
+    pressureBefore: Number(profile.adaptation_pressure), pressureAfter: clamp(Number(profile.adaptation_pressure) + rule.pressure, 0, 8),
+    stabilityBefore: Number(profile.stability), stabilityAfter: clamp(Number(profile.stability) + rule.stability, 0, 100),
+    symbiosisTrait, selectedIds: code === 'shaping' ? selectedIds : [],
+    finalTraits: finalTraits.filter(item => selectedIds.includes(Number(item.id))).map(item => ({ id: Number(item.id), name: item.mutation_name })) };
+};
 
 /** 管理测试：逐道复用正式注射的随机结算，免除剧情、经验和材料门槛。 */
 export const simulateEvolutionToLevel30 = async (connection: PoolConnection, qqUserId: string) => {
@@ -442,7 +479,7 @@ export const evolutionObservationDashboard = async (qqUserId: string) => withTra
   };
 });
 
-export const acceptEvolutionObservation = async (qqUserId: string, type: EvolutionObservationType) => withTransaction(async connection => {
+export const acceptEvolutionObservationInTransaction = async (connection: PoolConnection, qqUserId: string, type: EvolutionObservationType, preview = false) => {
   if (!observationType(type)) throw new Error('未知的观察类型。');
   const character = await characterFor(connection, qqUserId, true); const profile = await ensureEvolutionProfile(connection, character, true);
   if (!profile) throw new Error('研究室尚未向你开放。');
@@ -453,12 +490,14 @@ export const acceptEvolutionObservation = async (qqUserId: string, type: Evoluti
   const [existingRows] = await connection.execute<ObservationRow[]>('SELECT * FROM player_evolution_observations WHERE character_id=? AND business_date=? AND observation_type=? LIMIT 1 FOR UPDATE', [character.id, key, type]);
   if (existingRows[0]) throw new Error('这份观察今天已经整理过了，请选择另一项。');
   const definition = observationDefinitions[type];
+  if (preview) return { type, ...definition, rewards: observationRewardsText(definition.items) };
   const [accepted]=await connection.execute<ResultSetHeader>(`INSERT INTO player_evolution_observations
     (character_id,business_date,observation_type,status,progress,target_count,objective_text,reward_json)
     VALUES (?,?,?,'accepted',0,?,?,?)`, [character.id, key, type, definition.target, definition.objective, JSON.stringify(definition.items)]);
   await recordCharacterOperation(connection,{characterId:Number(character.id),kind:'evolution.observation_accepted',source:{system:'evolution_observation',id:Number(accepted.insertId),step:'accepted'},outcome:'接取',summary:`接取${definition.name}`,detail:{observationId:Number(accepted.insertId),type,objective:definition.objective,target:definition.target}});
   return { type, ...definition, rewards: observationRewardsText(definition.items) };
-});
+};
+export const acceptEvolutionObservation = (qqUserId: string, type: EvolutionObservationType) => withTransaction(connection => acceptEvolutionObservationInTransaction(connection, qqUserId, type));
 
 const advanceActiveObservation = async (connection: PoolConnection, characterId: number, advance: (row: ObservationRow) => number) => {
   const key = businessDate(); const [rows] = await connection.execute<ObservationRow[]>("SELECT * FROM player_evolution_observations WHERE character_id=? AND business_date=? AND status='accepted' LIMIT 1 FOR UPDATE", [characterId, key]);
@@ -490,7 +529,7 @@ export const advanceEvolutionObservationBattle = async (connection: PoolConnecti
 
 export const advanceEvolutionObservationMining = (connection: PoolConnection, characterId: number) => advanceActiveObservation(connection, characterId, row => row.observation_type === 'sample' ? 1 : 0);
 
-export const claimEvolutionObservation = async (qqUserId: string) => withTransaction(async connection => {
+export const claimEvolutionObservationInTransaction = async (connection: PoolConnection, qqUserId: string, preview = false) => {
   const character = await characterFor(connection, qqUserId, true); const profile = await ensureEvolutionProfile(connection, character, true);
   if (!profile) throw new Error('研究室尚未向你开放。');
   const key = businessDate(); const claimed = String(profile.daily_key ?? '') === key ? Number(profile.daily_claims) : 0;
@@ -519,15 +558,17 @@ export const claimEvolutionObservation = async (qqUserId: string) => withTransac
     const quantity = Math.max(0, Math.floor(exactQuantity));
     if (ordinaryCodes.has(code) && ordinaryBonusPct) remainder = Math.max(0, exactQuantity - quantity);
     if (!quantity) continue;
-    await addItem(connection, Number(character.id), code, quantity);
+    if (!preview) await addItem(connection, Number(character.id), code, quantity);
     grantedItems[code] = quantity;
   }
   lineageMarks.mutationObservationRemainder = remainder;
+  if (preview) return { name: observationDefinitions[row.observation_type].name, items: grantedItems, remaining: Math.max(0, 1 - claimed) };
   await connection.execute("UPDATE player_evolution_observations SET status='claimed',claimed_at=NOW(),updated_at=NOW() WHERE id=?", [row.id]);
   await connection.execute('UPDATE player_evolution_profiles SET daily_key=?,daily_claims=?,lineage_marks_json=?,updated_at=NOW() WHERE character_id=?', [key, claimed + 1, JSON.stringify(lineageMarks), character.id]);
   await recordCharacterOperation(connection,{characterId:Number(character.id),kind:'evolution.observation_claimed',source:{system:'evolution_observation',id:Number(row.id),step:'claimed'},outcome:'领取',summary:`交付${observationDefinitions[row.observation_type].name}并领取报酬`,detail:{observationId:Number(row.id),type:row.observation_type,rewards:grantedItems,ordinaryBonusPct}});
   return { name: observationDefinitions[row.observation_type].name, items: grantedItems, remaining: Math.max(0, 1 - claimed) };
-});
+};
+export const claimEvolutionObservation = (qqUserId: string) => withTransaction(connection => claimEvolutionObservationInTransaction(connection, qqUserId));
 
 const mutationFor = async (connection: PoolConnection, characterId: number, mutationId: number, lock = false) => {
   const [rows] = await connection.execute<MutationRow[]>(`SELECT * FROM player_mutations WHERE id=? AND character_id=? LIMIT 1${lock ? ' FOR UPDATE' : ''}`, [mutationId, characterId]);
@@ -616,7 +657,7 @@ export const shapingDraft = async (qqUserId: string) => withTransaction(async co
   return { traits, selectedIds, required: Math.min(3, traits.length) };
 });
 
-export const toggleShapingTrait = async (qqUserId: string, mutationId: number) => withTransaction(async connection => {
+export const toggleShapingTraitInTransaction = async (connection: PoolConnection, qqUserId: string, mutationId: number, preview = false) => {
   const character = await characterFor(connection, qqUserId, true); const profile = await ensureEvolutionProfile(connection, character, true);
   if (!profile) throw new Error('研究室尚未向你开放。');
   if (Number(profile.unlocked_level) !== 29) throw new Error('自我定义会在 Lv.29 的成熟结前开启。');
@@ -624,9 +665,10 @@ export const toggleShapingTrait = async (qqUserId: string, mutationId: number) =
   const required = Math.min(3, traits.length); let selectedIds = jsonNumberList(profile.final_traits_json).filter(id => traits.some(trait => Number(trait.id) === id));
   if (selectedIds.includes(mutationId)) selectedIds = selectedIds.filter(id => id !== mutationId);
   else { if (selectedIds.length >= required) throw new Error(`最多选择 ${required} 项定型特征。`); selectedIds.push(mutationId); }
-  await connection.execute(`UPDATE player_evolution_profiles SET final_traits_json=?,updated_at=NOW() WHERE character_id=?`, [JSON.stringify(selectedIds), character.id]);
+  if (!preview) await connection.execute(`UPDATE player_evolution_profiles SET final_traits_json=?,updated_at=NOW() WHERE character_id=?`, [JSON.stringify(selectedIds), character.id]);
   return { traits, selectedIds, required };
-});
+};
+export const toggleShapingTrait = (qqUserId: string, mutationId: number) => withTransaction(connection => toggleShapingTraitInTransaction(connection, qqUserId, mutationId));
 
 export const mutationDetail = async (qqUserId: string, mutationId: number) => withTransaction(async connection => {
   const character = await characterFor(connection, qqUserId, true); await assertAtEvolutionLab(connection, character);

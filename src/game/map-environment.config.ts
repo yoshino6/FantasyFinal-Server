@@ -1,0 +1,128 @@
+import { generateEnvironmentV2ForCells } from './map-environment-v2.config';
+/** 环境占地只采用整数整格；图片外延由客户端处理，不参与碰撞。 */
+export type EnvironmentCell = { x: number; y: number; z: number; regionId?: number };
+export type EnvironmentArea = { regionId: number; code: string; danger: number; enabled: boolean; minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number; generationVersion?: 1 | 2; generationSeed?: string };
+export type EnvironmentProtection = { x: number; y: number; z: number; radius?: number };
+export type EnvironmentTemplate = { id: string; name: string; description: string; assetKey: string; width: number; height: number; blocking: boolean; destructible: boolean; workSeconds: number; dropCode?: string };
+export type GeneratedEnvironmentObject = EnvironmentTemplate & { regionId: number; regionCode: string; x: number; y: number; z: number; templateId: string; footprint: { dx: number; dy: number }[]; seed: number; variant: number };
+export const environmentGeneratorVersion = 1;
+export const environmentSectorSize = 6;
+export const environmentTemplates: Record<string, EnvironmentTemplate> = {
+  forest_log: { id: 'forest_log', name: '覆苔倒木', description: '横卧林间的旧木，清理后可取出木材。', assetKey: 'forest_log', width: 3, height: 1, blocking: true, destructible: true, workSeconds: 15, dropCode: 'home_wood' },
+  rock_cluster: { id: 'rock_cluster', name: '松动岩簇', description: '几块松动岩石聚在一起，敲碎后能够通行。', assetKey: 'rock_cluster', width: 2, height: 2, blocking: true, destructible: true, workSeconds: 20, dropCode: 'home_stone' },
+  root_cluster: { id: 'root_cluster', name: '缠结树根', description: '盘结的根系占满地面，可清理为木材。', assetKey: 'root_cluster', width: 2, height: 2, blocking: true, destructible: true, workSeconds: 18, dropCode: 'home_wood' },
+  ice_cluster: { id: 'ice_cluster', name: '冻土冰簇', description: '厚冰冻住了碎石，需要时间才能敲开。', assetKey: 'ice_cluster', width: 2, height: 2, blocking: true, destructible: true, workSeconds: 22, dropCode: 'home_stone' },
+  ruin_wall: { id: 'ruin_wall', name: '古老残墙', description: '与地下基础连为一体的古墙，请绕行。', assetKey: 'ruin_wall', width: 3, height: 1, blocking: true, destructible: false, workSeconds: 0 },
+  reed_cluster: { id: 'reed_cluster', name: '密生芦苇', description: '根茎交缠的芦苇堵住了浅滩，可割开通路。', assetKey: 'reed_cluster', width: 2, height: 1, blocking: true, destructible: true, workSeconds: 10, dropCode: 'home_wood' },
+  red_rocks: { id: 'red_rocks', name: '赤铁碎岩', description: '暗红岩块堆积在矿道旁，可敲取石料。', assetKey: 'red_rocks', width: 2, height: 2, blocking: true, destructible: true, workSeconds: 22, dropCode: 'home_stone' },
+  fixed_boulder: { id: 'fixed_boulder', name: '坚固岩脊', description: '深入地层的岩脊无法清理，请沿周围通路绕行。', assetKey: 'rock_cluster', width: 2, height: 2, blocking: true, destructible: false, workSeconds: 0 },
+  grass_tuft: { id: 'grass_tuft', name: '野草与小花', description: '随风摇曳的草叶，不影响通行。', assetKey: 'grass_tuft', width: 1, height: 1, blocking: false, destructible: false, workSeconds: 0 },
+  forest_mushroom: { id: 'forest_mushroom', name: '林间菌丛', description: '潮湿树荫下自然生长的小菌丛。', assetKey: 'forest_mushroom', width: 1, height: 1, blocking: false, destructible: false, workSeconds: 0 },
+  pebble_scatter: { id: 'pebble_scatter', name: '散落碎石', description: '散落在地面的细碎岩石，不影响通行。', assetKey: 'pebble_scatter', width: 1, height: 1, blocking: false, destructible: false, workSeconds: 0 },
+  frost_grass: { id: 'frost_grass', name: '覆霜草丛', description: '细雪间露出银白草尖。', assetKey: 'frost_grass', width: 1, height: 1, blocking: false, destructible: false, workSeconds: 0 }
+};
+type Ecology = { density: number; obstacles: string[]; scenery: string[] };
+const meadow: Ecology = { density: .35, obstacles: ['root_cluster', 'rock_cluster'], scenery: ['grass_tuft'] };
+const town: Ecology = { density: 0, obstacles: [], scenery: ['grass_tuft', 'pebble_scatter'] };
+export const environmentEcologies: Record<string, Ecology> = {
+  world_tree: town, baina_town: town, floating_leaf_town: { ...town, scenery: ['grass_tuft'] }, frost_dragon_inn: { ...town, scenery: ['frost_grass'] },
+  worldtree_meadow: meadow,
+  morningdew_riverbank: { density: .55, obstacles: ['reed_cluster', 'rock_cluster'], scenery: ['grass_tuft', 'pebble_scatter'] },
+  gravelwind_shore: { density: .55, obstacles: ['rock_cluster', 'fixed_boulder'], scenery: ['pebble_scatter'] },
+  dark_forest: { density: .72, obstacles: ['forest_log', 'root_cluster', 'rock_cluster'], scenery: ['forest_mushroom', 'grass_tuft'] },
+  dark_forest_deep: { density: .85, obstacles: ['forest_log', 'root_cluster', 'ruin_wall'], scenery: ['forest_mushroom'] },
+  ridge_foothills: { density: .75, obstacles: ['rock_cluster', 'fixed_boulder'], scenery: ['pebble_scatter'] },
+  rediron_pass: { density: .72, obstacles: ['red_rocks', 'fixed_boulder'], scenery: ['pebble_scatter'] },
+  mistalgae_marsh: { density: .75, obstacles: ['reed_cluster', 'root_cluster', 'forest_log'], scenery: ['grass_tuft', 'forest_mushroom'] },
+  fallenstar_swamp: { density: .8, obstacles: ['reed_cluster', 'forest_log', 'red_rocks'], scenery: ['forest_mushroom', 'pebble_scatter'] },
+  frostcrown_plateau: { density: .68, obstacles: ['ice_cluster', 'rock_cluster'], scenery: ['frost_grass'] },
+  thundercliff: { density: .68, obstacles: ['fixed_boulder', 'rock_cluster', 'forest_log'], scenery: ['pebble_scatter'] },
+  eclipse_ruins: { density: .8, obstacles: ['ruin_wall', 'rock_cluster'], scenery: ['pebble_scatter', 'grass_tuft'] },
+  eternal_arena: { density: 0, obstacles: [], scenery: [] }, boss_test_arena: { density: 0, obstacles: [], scenery: [] },
+  dark_forest_dungeon: { density: 0, obstacles: [], scenery: [] }
+};
+/** 无 Math.random、时间、视口或角色种子；负坐标也稳定。 */
+export const environmentHash = (value: string) => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index++) { hash ^= value.charCodeAt(index); hash = Math.imul(hash, 16777619); }
+  return hash >>> 0;
+};
+const fraction = (value: string) => environmentHash(value) / 0x100000000;
+const contains = (area: EnvironmentArea, point: EnvironmentCell) => point.x >= area.minX && point.x <= area.maxX && point.y >= area.minY && point.y <= area.maxY && point.z >= area.minZ && point.z <= area.maxZ;
+export const environmentAreaAt = (areas: readonly EnvironmentArea[], point: EnvironmentCell) => areas.filter(area => contains(area, point)).sort((a, b) => b.danger - a.danger || a.regionId - b.regionId)[0];
+export const environmentObjectCells = (object: Pick<GeneratedEnvironmentObject, 'x' | 'y' | 'z' | 'regionId' | 'footprint'>): EnvironmentCell[] => object.footprint.map(({ dx, dy }) => ({ x: object.x + dx, y: object.y + dy, z: object.z, regionId: object.regionId }));
+export const environmentDistance = (object: Pick<GeneratedEnvironmentObject, 'x' | 'y' | 'z' | 'regionId' | 'footprint'>, point: EnvironmentCell) => point.z !== object.z || point.regionId !== undefined && point.regionId !== object.regionId ? Infinity : Math.min(...environmentObjectCells(object).map(cell => Math.abs(cell.x - point.x) + Math.abs(cell.y - point.y)));
+export const environmentProtectedCell = (cell: EnvironmentCell, protections: readonly EnvironmentProtection[]) => protections.some(point => {
+  if (point.z !== cell.z) return false;
+  const radius = point.radius ?? 1;
+  if (Math.abs(point.x - cell.x) <= radius && Math.abs(point.y - cell.y) <= radius) return true;
+  // 角色只保护实际站立格，不能在走近障碍时自动把它抹掉。
+  if (radius === 0) return false;
+  // 每个关键点通过短支路连至贯通的六格通路网。
+  const laneX = Math.round(point.x / environmentSectorSize) * environmentSectorSize;
+  return Math.abs(cell.y - point.y) <= 1 && cell.x >= Math.min(point.x, laneX) && cell.x <= Math.max(point.x, laneX);
+});
+export const environmentObjectId = (regionCode: string, x: number, y: number, z: number, slot: number) => `env${environmentGeneratorVersion}:${regionCode}:${x}:${y}:${z}:${slot}`;
+/** 每微区块只有一个完整障碍，锚点抖动、宏观团簇和独立装饰打散重复；边缘留格形成永久贯通路。 */
+export const generateEnvironmentV1ForCells = (areas: readonly EnvironmentArea[], cells: readonly EnvironmentCell[], protections: readonly EnvironmentProtection[] = []): GeneratedEnvironmentObject[] => {
+  if (cells.some(cell => ![cell.x, cell.y, cell.z].every(Number.isSafeInteger))) throw new Error('环境坐标必须为整数整格。');
+  const sectors = new Map<string, { sx: number; sy: number; z: number; area: EnvironmentArea }>();
+  const wanted = new Set(cells.map(cell => `${cell.x}:${cell.y}:${cell.z}`));
+  for (const cell of cells) {
+    if (cell.z < 0) continue; // 地下实例沿用 dungeon_cells 的墙与路径，绝不叠加地表种子。
+    const sx = Math.floor(cell.x / environmentSectorSize), sy = Math.floor(cell.y / environmentSectorSize);
+    // 邻区块的多格物件也按原锚点生成，视口裁切不影响身份或占地。
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      for (const area of areas.filter(area => cell.z >= area.minZ && cell.z <= area.maxZ)) sectors.set(`${area.regionId}:${sx + dx}:${sy + dy}:${cell.z}`, { sx: sx + dx, sy: sy + dy, z: cell.z, area });
+    }
+  }
+  const result: GeneratedEnvironmentObject[] = [];
+  for (const { sx, sy, z, area } of sectors.values()) {
+    if (!area.enabled || area.generationVersion === 2) continue;
+    const ecology = environmentEcologies[area.code] ?? meadow;
+    const base = `${environmentGeneratorVersion}:${area.code}:${sx}:${sy}:${z}`;
+    const clustered = .45 + fraction(`${area.code}:patch:${Math.floor(sx / 5)}:${Math.floor(sy / 5)}`) * .75;
+    const placed: EnvironmentCell[] = [];
+    for (let slot = 0; slot < 3; slot++) {
+      const names = slot === 0 ? ecology.obstacles : ecology.scenery;
+      if (!names.length || fraction(`${base}:density:${slot}`) > (slot === 0 ? ecology.density * clustered : .7)) continue;
+      const definition = environmentTemplates[names[environmentHash(`${base}:kind:${slot}`) % names.length]!]!;
+      const rotate = definition.width !== definition.height && environmentHash(`${base}:rotation:${slot}`) % 2 === 0;
+      const width = rotate ? definition.height : definition.width, height = rotate ? definition.width : definition.height;
+      const x = sx * environmentSectorSize + 1 + environmentHash(`${base}:x:${slot}`) % (environmentSectorSize - width);
+      const y = sy * environmentSectorSize + 1 + environmentHash(`${base}:y:${slot}`) % (environmentSectorSize - height);
+      const footprint = Array.from({ length: width * height }, (_, index) => ({ dx: index % width, dy: Math.floor(index / width) }));
+      const object: GeneratedEnvironmentObject = { ...definition, id: environmentObjectId(area.code, x, y, z, slot), templateId: definition.id, regionId: area.regionId, regionCode: area.code, x, y, z, width, height, footprint, seed: environmentHash(base), variant: environmentHash(`${base}:variant:${slot}`) % 3 };
+      const occupied = environmentObjectCells(object);
+      if (!occupied.every(cell => environmentAreaAt(areas, cell)?.regionId === area.regionId)) continue;
+      if (occupied.some(cell => placed.some(other => cell.x === other.x && cell.y === other.y))) continue;
+      if (occupied.some(cell => environmentProtectedCell(cell, protections))) continue;
+      placed.push(...occupied);
+      if (occupied.some(cell => wanted.has(`${cell.x}:${cell.y}:${cell.z}`))) result.push(object);
+    }
+  }
+  return result.sort((a, b) => a.id.localeCompare(b.id));
+};
+
+/** 未登记区域保持 env1；只有持久 profile 显式登记 2 才生成新布局。 */
+export const generateEnvironmentForCells = (areas: readonly EnvironmentArea[], cells: readonly EnvironmentCell[], protections: readonly EnvironmentProtection[] = []): GeneratedEnvironmentObject[] => {
+  const legacy = generateEnvironmentV1ForCells(areas, cells, protections);
+  if (!areas.some(area => area.generationVersion === 2)) return legacy;
+  return [...legacy, ...generateEnvironmentV2ForCells(areas, cells, protections, {
+    hash: environmentHash, areaAt: environmentAreaAt, objectCells: environmentObjectCells, protectedCell: environmentProtectedCell
+  })].sort((a, b) => a.id.localeCompare(b.id));
+};
+
+export const parseEnvironmentObjectId = (id: unknown) => {
+  if (typeof id !== 'string') return null;
+  const match = /^env([12]):([a-z0-9_]+):(-?\d+):(-?\d+):(-?\d+):([0-2])$/.exec(id);
+  if (!match) return null;
+  const [x, y, z, slot] = match.slice(3).map(Number);
+  if (![x, y, z, slot].every(Number.isSafeInteger) || z! < 0) return null;
+  if ([x, y, z, slot].some((value, index) => String(value) !== match[index + 3])) return null;
+  return { version: Number(match[1]) as 1 | 2, regionCode: match[2]!, x: x!, y: y!, z: z!, slot: slot! };
+};
+
+/** 清理掉落绑定对象身份，重试、取消后重开均不能重掷。基础建材少量产出。 */
+export const environmentDrops = (object: GeneratedEnvironmentObject) => object.destructible && object.dropCode
+  ? [{ code: object.dropCode, quantity: 1 + environmentHash(`${object.id}:drop`) % Math.max(1, Math.min(3, object.width * object.height)) }] : [];

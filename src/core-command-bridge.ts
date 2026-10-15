@@ -5,6 +5,7 @@ import { formatValueToAppMessage } from './app-api/app-format';
 import { enqueueWebNotificationForQqUser, ensureWebNotificationInbox } from './app-api/notification.service';
 import { enqueueNotification } from './core/notification/outbox.service';
 import type { AppCommandArgument, AppCommandRisk } from './app-api/command-catalog';
+import { captureMovementVisual, type MovementVisual } from './game/movement-visual';
 
 type DispatchRouter = { dispatch: (event: Record<string, unknown>) => Promise<unknown> };
 
@@ -114,13 +115,23 @@ const routeRefresh = (path: string, category: CoreCommandCatalogEntry['category'
   return [...regions];
 };
 
+// 环境作业显式声明读写与刷新域；“刷新”只查询，“结算”才发奖。
+const environmentCommandMetadata: Record<string, { readOnly: boolean; refresh: string[] }> = {
+  景物详情: { readOnly: true, refresh: ['nearby'] },
+  刷新清理: { readOnly: true, refresh: ['nearby'] },
+  清理景物: { readOnly: false, refresh: ['summary', 'nearby', 'map'] },
+  取消清理: { readOnly: false, refresh: ['summary', 'nearby', 'map'] },
+  结算清理: { readOnly: false, refresh: ['summary', 'nearby', 'map', 'inventory'] }
+};
+
 const routeToCatalogEntry = (route: RegisteredRoute): CoreCommandCatalogEntry | undefined => {
   const path = String(route.config?.path ?? '').trim();
   if (!coreRouteIsPublic(route)) return undefined;
   const args = schemaArguments(route.config?.schema);
-  const category = coreCategory(path);
-  const readOnly = routeReadOnly(path);
-  const risk = routeRisk(path, readOnly);
+  const environment = environmentCommandMetadata[path];
+  const category = environment ? 'explore' : coreCategory(path);
+  const readOnly = environment?.readOnly ?? routeReadOnly(path);
+  const risk = environment ? readOnly ? 'read' : 'write' : routeRisk(path, readOnly);
   const usage = String(route.config?.schema?.usage ?? '').trim() || `/${path}`;
   const fields = args.map(argument => ({
     key: argument.name,
@@ -144,7 +155,7 @@ const routeToCatalogEntry = (route: RegisteredRoute): CoreCommandCatalogEntry | 
     requiresCharacter: routeNeedsCharacter(path),
     risk,
     ...(!readOnly && /(删除|丢弃|领取|使用|购买|出售|卖出|求购|撤单|存入|取出|定存|兑付|提前支取|打造|炼制|熔铸|重铸|附魔|分解|构造|兑换|升级|学习|改名|改性|设置|注销|确认覆盖|恢复)/.test(path) ? { requiresConfirm: true } : {}),
-    refresh: routeRefresh(path, category),
+    refresh: environment ? [...environment.refresh] : routeRefresh(path, category),
     source: 'core-router'
   };
 };
@@ -176,6 +187,7 @@ export type CoreRouteExecution = {
   matched: boolean;
   result: any;
   formats: unknown[][];
+  movementVisual?: MovementVisual;
 };
 
 const validationFormat = (router: DispatchRouter, result: any) => {
@@ -265,15 +277,16 @@ export const executeCoreGameCommand = async (request: CoreCommandRequest): Promi
       });
     }
   };
-  const result = await (withEventContext as any)(
+  const capturedMovement = await captureMovementVisual(() => (withEventContext as any)(
     event,
     async () => undefined,
     () => withCoreMessageCapture(capture, () => router.dispatch(event)),
     { appName: 'fantasyfinal-core', phase: 'route' }
-  );
+  ));
+  const result: any = capturedMovement.result;
   if (result?.reason === 'validation_failed') {
     (withEventContext as any)(event, async () => undefined, () => capture.formats.push(validationFormat(router, result)), { appName: 'fantasyfinal-core', phase: 'route' });
   }
   capture.closed = true;
-  return { matched: Boolean(result?.matched), result, formats: capture.formats };
+  return { matched: Boolean(result?.matched), result, formats: capture.formats, ...(capturedMovement.movementVisual ? { movementVisual: capturedMovement.movementVisual } : {}) };
 };

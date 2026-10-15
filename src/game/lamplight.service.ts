@@ -40,6 +40,7 @@ const initialize=async(c:PoolConnection,character:RowDataPacket)=>{
   return(await load(c,Number(character.id)))!;
 };
 export const assertLamplightIdle=async(c:PoolConnection,id:number)=>{
+  await (await import('./map-environment.service')).assertEnvironmentIdle(c,id);
   await assertOpeningFree(c,id);
   const [rows]=await c.execute<RowDataPacket[]>(`SELECT '战斗' AS reason FROM combat_sessions s JOIN combat_members m ON m.session_id=s.id WHERE m.character_id=? AND s.state='active'
     UNION ALL SELECT '玩家对战' FROM player_pvp_battle_sessions WHERE state='active' AND (attacker_character_id=? OR defender_character_id=?)

@@ -9,8 +9,9 @@ import { automatonBattleInteractionText } from '../game/automaton-dialogue';
 import { readFile } from 'node:fs/promises';
 import { durationText } from '../game/time-format';
 import { continueCombatChant } from '../game/adventure.service';
-import { addNpcAffinity, adjustMovementStep, battleStatus, blockedDungeonDirections, cancelResourceMining, cancelTravel, claimCombatAmbushHandoffs, combatAction, chooseTarget, completeTravel, continueForestArrival, coordinateInteraction, currentEncounter, encounterAction, explore, forceAutoBattleDefeat, forestGuideAdvance, forestGuideChoice, forestGuideProgress, huntMonster, inventory, leaveOccupiedBattle, mineResource, move, moveTo, moveToMap, moveToNearbyMonster, movementProfile, nearbyPoints, queueAmbush, requireNpcAtCurrentPosition, requireNpcForOrdinaryTalk, resourceMiningStatus, switchCombatTarget, talkToNpc, travelStatus, type CombatAmbushHandoff, type CoordinateInteractionTarget, type VictorySettlement } from '../game/adventure.service';
-import { bossRandomEffectSummary } from '../game/adventure.service';
+import { addNpcAffinity, adjustMovementStep, battleStatus, cancelResourceMining, cancelTravel, claimCombatAmbushHandoffs, combatAction, chooseTarget, completeTravel, continueForestArrival, coordinateInteraction, currentEncounter, encounterAction, explore, forceAutoBattleDefeat, forestGuideAdvance, forestGuideChoice, forestGuideProgress, huntMonster, inventory, leaveOccupiedBattle, mineResource, move, moveTo, moveToMap, moveToNearbyMonster, movementProfile, nearbyPoints, queueAmbush, requireNpcAtCurrentPosition, requireNpcForOrdinaryTalk, resourceMiningStatus, switchCombatTarget, talkToNpc, travelStatus, type CombatAmbushHandoff, type CoordinateInteractionTarget, type VictorySettlement } from '../game/adventure.service';
+import { bossRandomEffectSummary, environmentDirectionState, localExplorationMap } from '../game/adventure.service';
+import { surfaceEnvironmentHint } from '../game/map-surface-message';
 import { autoBattleConfig, isFullPartyAutoBattle, pendingPartyAutoBattleActions } from '../game/auto-battle.service';
 import { messageFormat, npcInteractionMarkdown } from '../game/message';
 import { addStoryIllustration, storyIllustrationFor } from '../game/story-illustrations';
@@ -83,10 +84,11 @@ const leaveHomeForMovement = async (message: any, qqUserId: string) => {
   await leaveHome(qqUserId);
   await message.send({ format: messageFormat('百纳镇·我的家园', '你离开了家园。') });
 };
-const moveButtons = panelButtons;
-export const movementButtons = async (qqUserId: string, resting = false) => {
-  const [config, blockedDirections, hiddenMentor] = await Promise.all([autoBattleConfig(qqUserId), blockedDungeonDirections(qqUserId), mapHiddenMentorAtCurrentCell(qqUserId)]);
-  return panelButtons(resting, Boolean(config.settings.enabled), blockedDirections, hiddenMentor);
+const movementMapSnapshots = new WeakMap<object, { qqUserId: string; map: Awaited<ReturnType<typeof localExplorationMap>> }>();
+export const movementButtons = async (qqUserId: string, resting = false, panel?: object) => {
+  const snapshot = panel ? movementMapSnapshots.get(panel) : undefined;
+  const [config, directionState, hiddenMentor] = await Promise.all([autoBattleConfig(qqUserId), environmentDirectionState(qqUserId, snapshot?.qqUserId === qqUserId ? snapshot.map : undefined), mapHiddenMentorAtCurrentCell(qqUserId)]);
+  return panelButtons(resting, Boolean(config.settings.enabled), directionState, hiddenMentor);
 };
 // 战斗按键使用两字简称，技能详情与战斗日志继续使用完整技能名称。
 const advancedBattleSkillLabels: Record<string, string> = {
@@ -498,7 +500,7 @@ export const sendCombatResult = async (message: any, qqUserId: string, result: A
     const nearby = victory ? undefined : await nearbyPoints(qqUserId);
     const buttons = victory
       ? victoryButtons(settlement.arrivalPending)
-      : panelButtons(nearby?.character.activity_status !== 'active').addRow().addButton('技能列表', '/技能列表', { type: 'command', autoEnter: true, style: 'blue' });
+      : (await movementButtons(qqUserId, nearby?.character.activity_status !== 'active')).addRow().addButton('技能列表', '/技能列表', { type: 'command', autoEnter: false, style: 'blue' });
     await message.send({ format: format.addButtonGroup(buttons) });
     if (victory && settlement.members.some(member => member.realmCapReached && member.realmStage === 1)) await message.send({ format: realmBarrierFormat() });
     // 二十级瓶颈的提示必须服从当前主线：尚未完成「失踪的少女」及其后续同行时，
@@ -910,7 +912,7 @@ export const inventoryHandler = async () => {
 ${bag.items.length ? bag.items.map(i => `${i.equipped_slot ? `[已装备·${i.equipped_slot}] ` : i.quick_slot ? `[道具${i.quick_slot}] ` : ''}${i.name} ×${i.quantity}（${i.weight}kg）`).join('\n') : '背包为空。'}`) });
   } catch (error) { await fail(message, error); }
 };
-const dungeonPanel = async (message: any, qqUserId: string, text: string) => { const panel = await movementPanel(qqUserId, text); const nearby = await nearbyPoints(qqUserId); await message.send({ format: panel.addButtonGroup(await movementButtons(qqUserId, nearby.character.activity_status !== 'active')) }); };
+const dungeonPanel = async (message: any, qqUserId: string, text: string) => { const panel = await movementPanel(qqUserId, text); const nearby = await nearbyPoints(qqUserId); await message.send({ format: panel.addButtonGroup(await movementButtons(qqUserId, nearby.character.activity_status !== 'active', panel)) }); };
 export const dungeonEnterHandler = async () => { const [event] = useEvent(); const [route] = useRoute(); const [message] = useMessage(); try { const result = await enterDungeon(event.current.UserId, Number(route.param('id'))); await dungeonPanel(message, event.current.UserId, `你沿着石阶踏入地下。地下迷宫第一层（${result.x}, ${result.y}, ${result.z}）的墙壁渗着寒意。`); } catch (error) { await fail(message, error, '无法进入地下迷宫'); } };
 const dungeonFloorHandler = (direction: 'down' | 'up' | 'leave' | 'escape') => async () => { const [event] = useEvent(); const [message] = useMessage(); try { const result = await changeDungeonFloor(event.current.UserId, direction); const leaving = direction === 'leave' || direction === 'escape'; const text = leaving ? `${'usedTeleporter' in result && result.usedTeleporter ? '破魔传送器的符文碎裂成光点，你被送回入口外。' : '你从入口的石阶返回地面。'}\n你回到了幽暗密林（${result.x}, ${result.y}, 0）。` : `你沿石阶来到地下迷宫的下一处区域（${result.x}, ${result.y}, ${result.z}）。`; await dungeonPanel(message, event.current.UserId, text); } catch (error) { await fail(message, error, direction === 'escape' ? '脱离失败' : '无法通过石阶'); } };
 export const dungeonDownHandler = dungeonFloorHandler('down'); export const dungeonUpHandler = dungeonFloorHandler('up'); export const dungeonLeaveHandler = dungeonFloorHandler('leave'); export const dungeonEscapeHandler = dungeonFloorHandler('escape');
@@ -934,7 +936,14 @@ export const confirmPlayerPvpHandler = async () => {
   catch (error) { await fail(message, error, '攻击失败'); }
 };
 export const playerInteractionHandler = async () => { const [event] = useEvent(); const [route] = useRoute(); const [message] = useMessage(); try { const targetGameId = Number(route.param('id')); const result = await interactDungeonPlayer(event.current.UserId, targetGameId); await message.send({ format: playerInteractionFormat({ type: '玩家', id: String(targetGameId), name: result.name, description: '', gameId: targetGameId }, result.isFriend) }); } catch (error) { await fail(message, error, '互动失败'); } };
-export const movementPanel = async (qqUserId: string, description: string) => { const [nearby, movement, trackingHint, surfaceTrace] = await Promise.all([nearbyPoints(qqUserId), movementProfile(qqUserId), dungeonTrackingHint(qqUserId), omniscientTraces(qqUserId)]); const resting = nearby.character.activity_status !== 'active'; const trace = [surfaceTrace, trackingHint ? `【地宫识踪】${trackingHint}` : ''].filter(Boolean).join('\n'); return outsidePanel('行动', movedLocationText(nearby.character), movement.step, nearby.range, Number(nearby.character.pos_x), Number(nearby.character.pos_y), description, nearby.points, resting, nearby.landmarks, trace, movement.maximum, nearby.perceptionObscured, movement.showLandmarks, movement.showPlayers, nearby.mapUnlocked, nearby.character.activity_status, true); };
+export const movementPanel = async (qqUserId: string, description: string) => {
+  const [nearby, movement, trackingHint, surfaceTrace, map] = await Promise.all([nearbyPoints(qqUserId), movementProfile(qqUserId), dungeonTrackingHint(qqUserId), omniscientTraces(qqUserId), localExplorationMap(qqUserId)]);
+  const resting = nearby.character.activity_status !== 'active';
+  const trace = [surfaceTrace, trackingHint ? `【地宫识踪】${trackingHint}` : '', surfaceEnvironmentHint(map.surfaceScene)].filter(Boolean).join('\n');
+  const panel = outsidePanel('行动', movedLocationText(nearby.character), movement.step, nearby.range, Number(nearby.character.pos_x), Number(nearby.character.pos_y), description, nearby.points, resting, nearby.landmarks, trace, movement.maximum, nearby.perceptionObscured, movement.showLandmarks, movement.showPlayers, nearby.mapUnlocked, nearby.character.activity_status, true);
+  movementMapSnapshots.set(panel, { qqUserId, map });
+  return panel;
+};
 const interactionTypeLabel: Record<CoordinateInteractionTarget['type'], string> = { 玩家: '玩家', 域民: '域民', NPC: '域民', 建筑: '建筑', 资源: '资源', 入口: '入口', 地标: '地标' };
 const playerInteractionFormat = (target: CoordinateInteractionTarget, isFriend = false) => {
   const targetGameId = Number(target.gameId ?? target.id);
@@ -1097,7 +1106,7 @@ const showMoveResult = async (message: any, qqUserId: string, result: any) => {
     if (result.dungeon.kind === 'trap' || result.dungeon.kind === 'landmark') {
       const panel = await movementPanel(qqUserId, result.text);
       const nearby = await nearbyPoints(qqUserId);
-      await message.send({ format: panel.addButtonGroup(await movementButtons(qqUserId, nearby.character.activity_status !== 'active')) });
+      await message.send({ format: panel.addButtonGroup(await movementButtons(qqUserId, nearby.character.activity_status !== 'active', panel)) });
       return;
     }
     const trackingHint = await dungeonTrackingHint(qqUserId);
@@ -1112,7 +1121,7 @@ const showMoveResult = async (message: any, qqUserId: string, result: any) => {
     buttons.addButton('操作面板', '/面板', { type: 'command', autoEnter: true });
     await message.send({ format: Format.create().addMarkdown(markdown).addButtonGroup(buttons) }); return;
   }
-  if (result.kind !== 'encounter') { const panel = await movementPanel(qqUserId, result.text); const nearby = await nearbyPoints(qqUserId); await message.send({ format: panel.addButtonGroup(await movementButtons(qqUserId, nearby.character.activity_status !== 'active')) }); return; }
+  if (result.kind !== 'encounter') { const panel = await movementPanel(qqUserId, result.text); const nearby = await nearbyPoints(qqUserId); await message.send({ format: panel.addButtonGroup(await movementButtons(qqUserId, nearby.character.activity_status !== 'active', panel)) }); return; }
   if (await resolveAutoHuntEncounter(message, qqUserId, result)) return;
   const first = result.spawns[0];
   const targets = result.spawns.map((spawn: { name: string; level: number }) => `${spawn.name} Lv.${spawn.level}`).join('\n');
@@ -1164,7 +1173,7 @@ export const continueStoryHandler = async () => {
     }
     const panel = await movementPanel(event.current.UserId, story.text);
     const nearby = await nearbyPoints(event.current.UserId);
-    await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) });
+    await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) });
   } catch (error) { await fail(message, error, '无法继续剧情'); }
 };
 export const buildingHandler = (action: 'enter' | 'ignore' | 'leave' | 'area') => async () => {
@@ -1180,7 +1189,7 @@ export const buildingHandler = (action: 'enter' | 'ignore' | 'leave' | 'area') =
       if(action==='leave'||action==='ignore'){
         const panel=await movementPanel(event.current.UserId,action==='leave'?`你离开了${building.name}，回到门前的街道。`:'你暂时没有进入冒险者公会。');
         const nearby=await nearbyPoints(event.current.UserId);
-        await message.send({format:panel.addButtonGroup(await movementButtons(event.current.UserId,nearby.character.activity_status!=='active'))});
+        await message.send({format:panel.addButtonGroup(await movementButtons(event.current.UserId,nearby.character.activity_status!=='active',panel))});
         return;
       }
       if(action==='area'){
@@ -1210,31 +1219,31 @@ export const buildingHandler = (action: 'enter' | 'ignore' | 'leave' | 'area') =
       if (action === 'enter') { const { blacksmithFormat } = await import('./blacksmith'); await message.send({ format: await blacksmithFormat(event.current.UserId) }); return; }
       const panel = await movementPanel(event.current.UserId, action === 'leave' ? '你离开了铁匠铺，炉火与锤声在身后渐远。' : '你暂时没有进入铁匠铺。');
       const nearby = await nearbyPoints(event.current.UserId);
-      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); return;
+      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); return;
     }
     if (code === 'saint_church') {
       if (action === 'enter') { const { churchFormat } = await import('./church'); await message.send({ format: await churchFormat(event.current.UserId) }); return; }
       const panel = await movementPanel(event.current.UserId, action === 'leave' ? '你离开圣恩教堂，晚风与街道的声响重新围拢过来。' : '你暂时没有进入圣恩教堂。');
       const nearby = await nearbyPoints(event.current.UserId);
-      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); return;
+      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); return;
     }
     if (code === 'alchemy_sweetshop') {
       if (action === 'enter') { const { alchemistShopFormat } = await import('./alchemist'); await message.send({ format: await alchemistShopFormat(event.current.UserId) }); return; }
       const panel = await movementPanel(event.current.UserId, action === 'leave' ? '你离开了糖水屋，清甜的草药香仍萦绕在衣袖间。' : '你暂时没有进入糖水屋。');
       const nearby = await nearbyPoints(event.current.UserId);
-      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); return;
+      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); return;
     }
     if (code === 'oddworkshop') {
       if (action === 'enter') { const { oddWorkshopFormat } = await import('./deconstructor'); await message.send({ format: await oddWorkshopFormat(event.current.UserId) }); return; }
       const panel = await movementPanel(event.current.UserId, action === 'leave' ? '你离开了异工坊，身后仍传来轻快的齿轮转动声。' : '你暂时没有进入异工坊。');
       const nearby = await nearbyPoints(event.current.UserId);
-      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); return;
+      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); return;
     }
     if (code === 'hunter_lodge') {
       if (action === 'enter') { const { hunterLodgeHandler } = await import('./hunter-lodge'); await hunterLodgeHandler(); return; }
       const panel = await movementPanel(event.current.UserId, action === 'leave' ? '你离开猎户小屋，林风很快盖过了屋内的磨箭声。' : '屋内没有回应，你暂时没有继续敲门。');
       const nearby = await nearbyPoints(event.current.UserId);
-      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); return;
+      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); return;
     }
     if (['worldtree_skill_shop','leaf_skill_shop'].includes(code) && action==='enter') {
       await message.send({format:await(await import('./folio-shop')).folioShopFormat(event.current.UserId,code)});return;
@@ -1243,50 +1252,50 @@ export const buildingHandler = (action: 'enter' | 'ignore' | 'leave' | 'area') =
       if (action === 'enter') { const { bookshopHandler } = await import('./bookshop'); await bookshopHandler(); return; }
       const panel = await movementPanel(event.current.UserId, action === 'leave' ? '你离开百味书屋，身后仍传来轻柔的翻页声。' : '你暂时没有进入百味书屋。');
       const nearby = await nearbyPoints(event.current.UserId);
-      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); return;
+      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); return;
     }
     if (code === 'baina_residence') {
       if (action === 'enter') { const { homeShopFormat } = await import('./home-shop'); await message.send({ format: await homeShopFormat(event.current.UserId) }); return; }
       const panel = await movementPanel(event.current.UserId, action === 'leave' ? '你离开百纳居，木料与炉火的气息渐渐淡去。' : '百纳居的店员朝你点头，示意你进门详谈。');
       const nearby = await nearbyPoints(event.current.UserId);
-      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); return;
+      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); return;
     }
     if (code === 'world_gate') {
       if (action === 'enter') { const { worldGateFormat } = await import('./girl-gratitude'); await worldGateFormat(); return; }
       const panel = await movementPanel(event.current.UserId, action === 'leave' ? '你离开界门驿站，银蓝色光纹在身后渐渐暗下。' : '界门驿站的值守人安静地等着你的决定。');
       const nearby = await nearbyPoints(event.current.UserId);
-      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); return;
+      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); return;
     }
     if (code === 'leaf_manor') {
       if (action === 'enter') { await (await import('./floating-leaf')).floatingManorHandler(); return; }
       const panel = await movementPanel(event.current.UserId, '你暂时离开公馆，身后的返程航班记录仍在轻轻翻动。');
       const nearby = await nearbyPoints(event.current.UserId);
-      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); return;
+      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); return;
     }
     if (code === 'world_tree_gate') {
       if (action === 'enter') { const { worldTreeGateFormat } = await import('./girl-gratitude'); await worldTreeGateFormat(); return; }
       const panel = await movementPanel(event.current.UserId, action === 'leave' ? '你离开世界树界门，银蓝色光纹在根须之间渐渐收束。' : '世界树界门静静伫立，门内隐约映着远方的城镇灯火。');
       const nearby = await nearbyPoints(event.current.UserId);
-      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); return;
+      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); return;
     }
     if (code === 'canopy_exchange') {
       if (action === 'enter') { const { worldExchangeFormat } = await import('./girl-gratitude'); await worldExchangeFormat(); return; }
       const panel = await movementPanel(event.current.UserId, action === 'leave' ? '你离开万叶联市，叶脉间的交易声仍在身后流淌。' : '万叶联市的叶灯已为夜间来客亮起。');
       const nearby = await nearbyPoints(event.current.UserId);
-      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); return;
+      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); return;
     }
     if (code === 'world_library') {
       if (action === 'enter') { const { worldLibraryFormat } = await import('./evolution-quest'); await message.send({ format: await worldLibraryFormat(event.current.UserId) }); return; }
       if (action === 'area') { const { worldLibraryAreaHandler } = await import('./evolution-quest'); await worldLibraryAreaHandler(); return; }
       const panel = await movementPanel(event.current.UserId, action === 'leave' ? '你离开世界图书馆，枝叶间的翻页声渐渐远去。' : '图书馆的门扉仍为求知者敞开。');
       const nearby = await nearbyPoints(event.current.UserId);
-      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); return;
+      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); return;
     }
     if (code === 'evolution_lab') {
       if (action === 'enter') { const { evolutionLabHandler } = await import('./evolution'); await evolutionLabHandler(); return; }
       const panel = await movementPanel(event.current.UserId, action === 'leave' ? '深蓝色小门在身后合拢，叶脉的微光渐渐远去。' : '门牌上的字在枝影中静静发亮。');
       const nearby = await nearbyPoints(event.current.UserId);
-      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); return;
+      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); return;
     }
     if (action === 'enter') {
       if (code.startsWith('dw_')) {
@@ -1304,7 +1313,7 @@ export const buildingHandler = (action: 'enter' | 'ignore' | 'leave' | 'area') =
     if (action === 'area') { if (code !== 'guild_counter') throw new Error('这座建筑暂未开放内部区域。'); const area = String(route.param('area')); if (area === '悬赏板') { const { bountyBoardFormat } = await import('./bounty'); await message.send({ format: await bountyBoardFormat(event.current.UserId) }); return; } if (area === '工会商店') { const { guildShopFormat } = await import('./guild-shop'); await message.send({ format: guildShopFormat() }); return; } if (area === '餐厅') { const { restaurantFormat } = await import('./guild-restaurant'); await message.send({ format: restaurantFormat() }); return; } if (area === '地图' || area === '集结区') { const { openingGuildFormat } = await import('./opening-guild'); await message.send({ format: await openingGuildFormat(event.current.UserId, area) }); return; } await message.send({ format: area === '前台' ? await guildFrontDeskFormat(event.current.UserId) : guildInteriorFormat(area) }); return; }
     const panel = await movementPanel(event.current.UserId, action === 'leave' ? `你离开了${building.name}，回到门前的街道。` : `你暂时没有进入${building.name}。`);
     const nearby = await nearbyPoints(event.current.UserId);
-    await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) });
+    await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) });
   } catch (error) { await fail(message, error, '建筑操作失败'); }
 };
 export const guildRegistrationHandler = async () => { const [event] = useEvent(); const [message] = useMessage(); try { const context=await (await import('../game/guild-context')).requireCurrentGuild(event.current.UserId); const registered = await registerAdventurer(event.current.UserId); if (!registered) { await message.send({ format: await guildFrontDeskFormat(event.current.UserId, '莫妮卡轻轻摇头：“您的冒险者身份已经登记在册了。晋升考核将在满足条件后开放。”') }); return; } const markdown = Format.createMarkdown().addTitle('冒险家 注册').addNewline().addNewline().addBlockquote('你将手轻放在水晶球上，顿时散发出一阵耀眼的白光。').addNewline().addBlockquote(context.code==='world_tree'?'维萝扶稳水晶球，将一张漆黑的卡片贴近光晕。银线顺着卡面舒展开来，她用指腹抚平卡角，又轻声核对了一遍你的名字。':`${context.code==='baina_town'?'莫妮卡':context.hub.host}将一张通体漆黑卡片靠近球体，光芒汇聚成一道银线注入，卡片逐渐被染成银白。`).addNewline().addBlockquote('随后一行行异世界文字在卡面上依次浮现——').addNewline().addNewline().addText('获得【冒险者 卡片】').addNewline().addText('已补齐世界树、草原环带、幽暗密林与百纳镇的保底通行地图；另有一次免费自选额度，可到公会集结区领取已开放的 Lv.30 及以下地图。').addNewline().addText('你随时可以发送 ').addButton('/卡片', { data: '/卡片', autoEnter: false }).addText(' 查看。').addNewline().addText('你已察觉到自身属性，发送 ').addButton('/角色', { data: '/角色', autoEnter: false }).addText(' 查看。'); await message.send({ format: Format.create().addMarkdown(markdown).addButtonGroup(Format.createButtonGroup().addRow().addButton('前往集结区', context.code==='baina_town'?'/建筑区域 guild_counter 集结区':'/初行公会 集结区', { type: 'command', autoEnter: false, style: 'blue' }).addButton('返回前台', context.code==='baina_town'?'/建筑区域 guild_counter 前台':'/初行公会 前台', { type: 'command', autoEnter: false, style: 'blue' })) }); } catch (error) { await fail(message, error, '注册失败'); } };
@@ -1371,7 +1380,7 @@ export const pearGuideLeaveHandler = async () => {
 const sendNpcLeavePanel = async (message: any, qqUserId: string, name: string) => {
   const [nearby, movement] = await Promise.all([nearbyPoints(qqUserId), movementProfile(qqUserId)]);
   const panel = outsidePanel('行动', currentLocationText(nearby.character), movement.step, nearby.range, Number(nearby.character.pos_x), Number(nearby.character.pos_y), `你和${simpleNpcName(name)}道别，继续留意周围的动静。`, nearby.points, nearby.character.activity_status !== 'active', nearby.landmarks, '', movement.maximum, false, movement.showLandmarks, movement.showPlayers, nearby.mapUnlocked);
-  await message.send({ format: panel.addButtonGroup(await movementButtons(qqUserId, nearby.character.activity_status !== 'active')) });
+  await message.send({ format: panel.addButtonGroup(await movementButtons(qqUserId, nearby.character.activity_status !== 'active', panel)) });
 };
 export const npcLeaveHandler = async () => {
   const [event] = useEvent(); const [route] = useRoute(); const [message] = useMessage();
@@ -1389,7 +1398,7 @@ export const npcEncounterHandler = (action: 'talk' | 'ignore') => async () => {
     if (action === 'ignore') {
       const [nearby, movement] = await Promise.all([nearbyPoints(event.current.UserId), movementProfile(event.current.UserId)]);
       const panel = outsidePanel('行动', currentLocationText(nearby.character), movement.step, nearby.range, Number(nearby.character.pos_x), Number(nearby.character.pos_y), '你暂时没有上前搭话，继续留意四周。', nearby.points, nearby.character.activity_status !== 'active', nearby.landmarks, '', movement.maximum, false, movement.showLandmarks, movement.showPlayers, nearby.mapUnlocked);
-      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) });
+      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) });
       return;
     }
     if (npc.remoteTalk) {
@@ -1438,14 +1447,14 @@ export const npcEncounterHandler = (action: 'talk' | 'ignore') => async () => {
   } catch (error) { await fail(message, error, '对话失败'); }
 };
 const miningFormat = (kind: '矿脉' | '植被', name: string, seconds: number, remaining: number, rewardText = '') => Format.create().addMarkdown(Format.createMarkdown().addTitle('行动').addNewline().addNewline().addText('正在连续开采，同坐标资源采尽后停止').addNewline().addText(rewardText ? `本次结算：${rewardText}\n` : '').addBlockquote(`【${kind === '植被' ? '植被' : '锻材'}】${name}`).addNewline().addText(`每轮耗时${durationText(seconds)}`).addNewline().addText(`本轮剩余${durationText(remaining)}`)).addButtonGroup(Format.createButtonGroup().addRow().addButton('刷新开采', '/刷新开采', { type: 'command', autoEnter: true, style: 'blue' }).addButton('取消开采', '/取消开采', { type: 'command', autoEnter: true }).addRow().addButton('角色', '/角色', { type: 'command', autoEnter: true }).addButton('装备', '/装备', { type: 'command', autoEnter: true }).addButton('背包', '/背包', { type: 'command', autoEnter: true }).addButton('技能', '/技能列表', { type: 'command', autoEnter: true }).addButton('队伍', '/队伍', { type: 'command', autoEnter: true }));
-export const mineResourceHandler = async () => { const [event] = useEvent(); const [route] = useRoute(); const [message] = useMessage(); try { const result = await mineResource(event.current.UserId, Number(route.param('id'))); if (result.state === 'completed') { const panel = await movementPanel(event.current.UserId, `连续开采结束，获得${result.rewardText || '无'}。`); const nearby = await nearbyPoints(event.current.UserId); await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); return; } await message.send({ format: miningFormat(result.kind, result.name, result.seconds || (await resourceMiningStatus(event.current.UserId))?.seconds || 0, result.remaining, result.rewardText) }); } catch (error) { await fail(message, error, '开采失败'); } };
-export const refreshMiningHandler = async () => { const [event] = useEvent(); const [message] = useMessage(); try { const mining = await resourceMiningStatus(event.current.UserId); if (!mining) throw new Error('当前没有正在进行的资源开采。'); const result = await mineResource(event.current.UserId, mining.resourceId); if (result.state === 'completed') { const panel = await movementPanel(event.current.UserId, `连续开采结束，获得${result.rewardText || '无'}。`); const nearby = await nearbyPoints(event.current.UserId); await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); return; } await message.send({ format: miningFormat(result.kind, result.name, result.seconds, result.remaining, result.rewardText) }); } catch (error) { await fail(message, error, '开采状态不可用'); } };
-export const cancelMiningHandler = async () => { const [event] = useEvent(); const [message] = useMessage(); try { const result = await cancelResourceMining(event.current.UserId); const panel = await movementPanel(event.current.UserId, `你收起工具，中止连续开采。${result.rewardText ? `已完成的轮次结算：${result.rewardText}。` : '没有新增已完成的轮次。'}未满时长的轮次不产出材料。`); const nearby = await nearbyPoints(event.current.UserId); await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); } catch (error) { await fail(message, error, '取消开采失败'); } };
+export const mineResourceHandler = async () => { const [event] = useEvent(); const [route] = useRoute(); const [message] = useMessage(); try { const result = await mineResource(event.current.UserId, Number(route.param('id'))); if (result.state === 'completed') { const panel = await movementPanel(event.current.UserId, `连续开采结束，获得${result.rewardText || '无'}。`); const nearby = await nearbyPoints(event.current.UserId); await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); return; } await message.send({ format: miningFormat(result.kind, result.name, result.seconds || (await resourceMiningStatus(event.current.UserId))?.seconds || 0, result.remaining, result.rewardText) }); } catch (error) { await fail(message, error, '开采失败'); } };
+export const refreshMiningHandler = async () => { const [event] = useEvent(); const [message] = useMessage(); try { const mining = await resourceMiningStatus(event.current.UserId); if (!mining) throw new Error('当前没有正在进行的资源开采。'); const result = await mineResource(event.current.UserId, mining.resourceId); if (result.state === 'completed') { const panel = await movementPanel(event.current.UserId, `连续开采结束，获得${result.rewardText || '无'}。`); const nearby = await nearbyPoints(event.current.UserId); await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); return; } await message.send({ format: miningFormat(result.kind, result.name, result.seconds, result.remaining, result.rewardText) }); } catch (error) { await fail(message, error, '开采状态不可用'); } };
+export const cancelMiningHandler = async () => { const [event] = useEvent(); const [message] = useMessage(); try { const result = await cancelResourceMining(event.current.UserId); const panel = await movementPanel(event.current.UserId, `你收起工具，中止连续开采。${result.rewardText ? `已完成的轮次结算：${result.rewardText}。` : '没有新增已完成的轮次。'}未满时长的轮次不产出材料。`); const nearby = await nearbyPoints(event.current.UserId); await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); } catch (error) { await fail(message, error, '取消开采失败'); } };
 export const moveHandler = async () => { const [event] = useEvent(); const [route] = useRoute(); const [message] = useMessage(); try { await leaveHomeForMovement(message, event.current.UserId); await showMoveResult(message, event.current.UserId, await move(event.current.UserId, String(route.param('direction')))); } catch (error) { if (error instanceof Error && error.message.includes('当前格子存在敌对生物') && await showBlockedEncounter(message, event.current.UserId)) return; if (isForestGuideLocked(error)) { await storyLockedMessage(message, '无法移动'); return; } if (await showOngoingActivity(message, event.current.UserId, '无法移动')) return; await fail(message, error, '无法移动'); } };
 export const goToHandler = async () => { const [event] = useEvent(); const [route] = useRoute(); const [message] = useMessage(); try { await leaveHomeForMovement(message, event.current.UserId); const result = await moveTo(event.current.UserId, Number(route.param('x')), Number(route.param('y')), Number(route.param('z'))); if (result.kind === 'travel_confirmation') { await message.send({format:travelConfirmationFormat(result)}); return; } if (result.kind === 'travel') { await message.send({ format: travelFormat('开始前往', result.regionName, result.x, result.y, result.seconds, result.remaining, 'move', result.destinationName, result.z) }); scheduleTravelCompletion(message, event.current.UserId, result.remaining); return; } await showMoveResult(message, event.current.UserId, result); } catch (error) { if (error instanceof Error && error.message.includes('当前格子存在敌对生物') && await showBlockedEncounter(message, event.current.UserId)) return; if (isForestGuideLocked(error)) { await storyLockedMessage(message, '无法前往该位置'); return; } if (await showOngoingActivity(message, event.current.UserId, '无法前往该位置')) return; await fail(message, error, '无法前往该位置'); } };
 export const goToMapHandler = async () => { const [event] = useEvent(); const [route] = useRoute(); const [message] = useMessage(); try { await leaveHomeForMovement(message, event.current.UserId); const result = await moveToMap(event.current.UserId, String(route.param('code'))); if (result.kind === 'travel_confirmation') { await message.send({format:travelConfirmationFormat(result)}); return; } if (result.kind === 'travel') { await message.send({ format: travelFormat('开始前往', result.regionName, result.x, result.y, result.seconds, result.remaining, 'move', result.destinationName, result.z) }); scheduleTravelCompletion(message, event.current.UserId, result.remaining); return; } await showMoveResult(message, event.current.UserId, result); } catch (error) { if (error instanceof Error && error.message.includes('当前格子存在敌对生物') && await showBlockedEncounter(message, event.current.UserId)) return; if (isForestGuideLocked(error)) { await storyLockedMessage(message, '无法前往地图'); return; } if (await showOngoingActivity(message, event.current.UserId, '无法前往地图')) return; await fail(message, error, '无法前往地图'); } };
 export const huntHandler = async () => { const [event] = useEvent(); const [message] = useMessage(); try { const result = await huntMonster(event.current.UserId); await message.send({ format: travelFormat('开始寻怪……', result.regionName, result.x, result.y, result.seconds, result.remaining, 'hunt') }); scheduleTravelCompletion(message, event.current.UserId, result.remaining); } catch (error) { if (error instanceof Error && error.message.includes('当前格子存在敌对生物') && await showBlockedEncounter(message, event.current.UserId)) return; if (isForestGuideLocked(error)) { await storyLockedMessage(message, '无法寻怪'); return; } if (await showOngoingActivity(message, event.current.UserId, '无法寻怪')) return; await fail(message, error, '无法寻怪'); } };
-export const cancelTravelHandler = async () => { const [event] = useEvent(); const [message] = useMessage(); try { const cancelled = await cancelTravel(event.current.UserId); const timer = travelTimers.get(event.current.UserId); if (timer) clearTimeout(timer); travelTimers.delete(event.current.UserId); const [nearby, movement] = await Promise.all([nearbyPoints(event.current.UserId), movementProfile(event.current.UserId)]); const character = cancelled.character; const cancellationText = cancelled.activityType === 'hunt' ? '寻怪已取消' : '移动已取消'; const panel = outsidePanel('行动', `${cancellationText}\n${currentLocationText(character)}`, movement.step, nearby.range, Number(character.pos_x), Number(character.pos_y), nearby.description, nearby.points, nearby.character.activity_status !== 'active', nearby.landmarks, '', movement.maximum, false, movement.showLandmarks, movement.showPlayers, nearby.mapUnlocked); await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); } catch (error) { await fail(message, error, '取消行动失败'); } };
+export const cancelTravelHandler = async () => { const [event] = useEvent(); const [message] = useMessage(); try { const cancelled = await cancelTravel(event.current.UserId); const timer = travelTimers.get(event.current.UserId); if (timer) clearTimeout(timer); travelTimers.delete(event.current.UserId); const [nearby, movement] = await Promise.all([nearbyPoints(event.current.UserId), movementProfile(event.current.UserId)]); const character = cancelled.character; const cancellationText = cancelled.activityType === 'hunt' ? '寻怪已取消' : '移动已取消'; const panel = outsidePanel('行动', `${cancellationText}\n${currentLocationText(character)}`, movement.step, nearby.range, Number(character.pos_x), Number(character.pos_y), nearby.description, nearby.points, nearby.character.activity_status !== 'active', nearby.landmarks, '', movement.maximum, false, movement.showLandmarks, movement.showPlayers, nearby.mapUnlocked); await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); } catch (error) { await fail(message, error, '取消行动失败'); } };
 
 export const adjustMovementHandler = async () => {
   const [event] = useEvent(); const [route] = useRoute(); const [message] = useMessage();
@@ -1453,7 +1462,7 @@ export const adjustMovementHandler = async () => {
     const result = await adjustMovementStep(event.current.UserId, Number(route.param('step')));
     const [nearby, movement] = await Promise.all([nearbyPoints(event.current.UserId), movementProfile(event.current.UserId)]);
     const panel = outsidePanel('行动', currentLocationText(nearby.character), result.step, nearby.range, Number(nearby.character.pos_x), Number(nearby.character.pos_y), `你将单次移动距离调整为 ${result.step} 格。`, nearby.points, nearby.character.activity_status !== 'active', nearby.landmarks, '', result.maximum, false, movement.showLandmarks, movement.showPlayers, nearby.mapUnlocked);
-    await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) });
+    await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) });
   } catch (error) { await fail(message, error, '移动速度调整失败'); }
 };
 export const refreshTravelHandler = async () => {
@@ -1470,7 +1479,7 @@ export const refreshTravelHandler = async () => {
       // 抵达后的旧“刷新”按钮仍可安全使用，改为展示当前位置而非报错。
       const [nearby, movement] = await Promise.all([nearbyPoints(event.current.UserId), movementProfile(event.current.UserId)]);
       const panel = outsidePanel('行动', currentLocationText(nearby.character), movement.step, nearby.range, Number(nearby.character.pos_x), Number(nearby.character.pos_y), nearby.description, nearby.points, nearby.character.activity_status !== 'active', nearby.landmarks, '', movement.maximum, nearby.perceptionObscured, movement.showLandmarks, movement.showPlayers, nearby.mapUnlocked);
-      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) });
+      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) });
       return;
     }
     if (travel.remaining <= 0) {
@@ -1478,7 +1487,7 @@ export const refreshTravelHandler = async () => {
       if (result) { await showMoveResult(message, event.current.UserId, result); return; }
       const [nearby, movement] = await Promise.all([nearbyPoints(event.current.UserId), movementProfile(event.current.UserId)]);
       const panel = outsidePanel('行动', currentLocationText(nearby.character), movement.step, nearby.range, Number(nearby.character.pos_x), Number(nearby.character.pos_y), nearby.description, nearby.points, nearby.character.activity_status !== 'active', nearby.landmarks, '', movement.maximum, nearby.perceptionObscured, movement.showLandmarks, movement.showPlayers, nearby.mapUnlocked);
-      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) });
+      await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) });
       return;
     }
     const title = travel.activityType === 'hunt' ? '正在寻怪' : travel.destinationKind === 'home' ? '正在回家·' : '正在前往';
@@ -1519,7 +1528,7 @@ export const nearbyMonsterAttackHandler = async () => {
 };
 export const ambushHandler = async () => { const [event] = useEvent(); const [route] = useRoute(); const [message] = useMessage(); try { await chooseTarget(event.current.UserId, Number(route.param('id')), true); const battle = await battleStatus(event.current.UserId); if (await isFullPartyAutoBattle(event.current.UserId)) { await startAutoBattle(message, event.current.UserId, '战斗开始\n你看准目标，疾速突进——\n（首回合直击伤害+50%）'); return; } await message.send({ format: ambushStartFormat(battle) }); await startAutoBattle(message, event.current.UserId); } catch (error) { await fail(message, error, '无法发动偷袭'); } };
 export const queueAmbushHandler = async () => { const [event] = useEvent(); const [route] = useRoute(); const [message] = useMessage(); try { const spawnId = Number(route.param('id')); const channelId = String(event.current.ChannelId ?? ''); const delivery = { scope: !event.current.IsPrivate && channelId ? 'group' as const : 'c2c' as const, targetId: !event.current.IsPrivate && channelId ? channelId : String(event.current.UserId), botId: String(event.current.BotId ?? '') || undefined }; const result = await queueAmbush(event.current.UserId, spawnId, delivery); if (result.ready) { await chooseTarget(event.current.UserId, result.spawnId ?? spawnId); const battle = await battleStatus(event.current.UserId); await message.send({ format: battleStartFormat(result.residualParty ? '前一支队伍击败了目标，但伤势未愈。你抓住破绽，伏击其残余队伍！' : '前一场战斗已经结束，你趁目标尚未恢复时切入战场。', battle) }); await startAutoBattle(message, event.current.UserId); return; } await message.send({ format: messageFormat('伏击等待', '你已埋伏在战场边缘。当前战斗结束后，机器人会在你发送伏击的会话中通知并自动接管后续战斗。') }); } catch (error) { await fail(message, error, '无法伏击'); } };
-export const leaveOccupiedBattleHandler = async () => { const [event] = useEvent(); const [message] = useMessage(); try { await leaveOccupiedBattle(event.current.UserId); const panel = await movementPanel(event.current.UserId, '你避开了正在进行的战斗，可以继续移动。'); const nearby = await nearbyPoints(event.current.UserId); await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active')) }); } catch (error) { await fail(message, error, '无法离开战场'); } };
+export const leaveOccupiedBattleHandler = async () => { const [event] = useEvent(); const [message] = useMessage(); try { await leaveOccupiedBattle(event.current.UserId); const panel = await movementPanel(event.current.UserId, '你避开了正在进行的战斗，可以继续移动。'); const nearby = await nearbyPoints(event.current.UserId); await message.send({ format: panel.addButtonGroup(await movementButtons(event.current.UserId, nearby.character.activity_status !== 'active', panel)) }); } catch (error) { await fail(message, error, '无法离开战场'); } };
 export const forestGuideHandler = async () => { const [event] = useEvent(); const [route] = useRoute(); const [message] = useMessage(); try { const progress = await forestGuideAdvance(event.current.UserId, String(route.param('action'))); if (!progress.battleChoice) { await message.send({ format: chapterFormat(progress.stage, progress.text) }); return; } await message.send({ format: chapterFormat(5, progress.text) }); const result = await forestGuideChoice(event.current.UserId, progress.battleChoice); await chooseTarget(event.current.UserId, result.spawnId); const battle = await battleStatus(event.current.UserId); await message.send({ format: battleStartFormat(`${result.text}\n本场剧情战斗将暂时关闭自动战斗。`, battle) }); } catch (error) { await fail(message, error, '初章推进失败'); } };
 
 /** F03 初行路线复用原有的三人冒险团、虚弱森林史莱姆与真实战斗系统。 */
@@ -1555,7 +1564,7 @@ const showRetreatArrival = async (message: any, qqUserId: string, retreatText: s
   // 躲避后只展示当前位置的操作面板；不能再用“移动到当前位置”重绘，
   // 否则城镇追捕会被误判为一次新的移动并立刻再次触发。
   const panel = await movementPanel(qqUserId, retreatText);
-  await message.send({ format: panel.addButtonGroup(await movementButtons(qqUserId, nearby.character.activity_status !== 'active')) });
+  await message.send({ format: panel.addButtonGroup(await movementButtons(qqUserId, nearby.character.activity_status !== 'active', panel)) });
 };
 type AdvancedSkillRequest = { id?: number; code?: string };
 const advancedSkillIdFor = (battle: { advancedSkills: Array<{ id: number; code: string }> }, request?: AdvancedSkillRequest) => {
@@ -1744,7 +1753,7 @@ export const encounterHandler = (action: 'avoid' | 'persuade', title: string) =>
       const battle = await battleStatus(event.current.UserId); const failedNegotiation = action === 'persuade' && text.startsWith('交涉失败！');
       await message.send({ format: failedNegotiation ? negotiationFailureFormat(text, battle) : battleFormat(title, text, battle) });
       if (failedNegotiation) await startAutoBattle(message, event.current.UserId);
-    } catch { await message.send({ format: Format.create().addMarkdown(Format.createMarkdown().addTitle(title).addNewline().addNewline().addText(text)).addButtonGroup(moveButtons()) }); }
+    } catch { await message.send({ format: Format.create().addMarkdown(Format.createMarkdown().addTitle(title).addNewline().addNewline().addText(text)).addButtonGroup(await movementButtons(event.current.UserId)) }); }
   } catch (error) { await fail(message, error, `${title}失败`); }
 };
 

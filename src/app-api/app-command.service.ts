@@ -52,6 +52,7 @@ import { experienceRequiredForLevel } from '../game/constants';
 import { registeredAdvancedProfessionByCode } from '../game/advanced-profession.config';
 import type { NegotiationCommand, NegotiationResult, NegotiationView } from '../game/negotiation.service';
 import { appStoryIllustrationFor } from '../game/story-illustrations';
+import { socialIdentities, type SocialPortrait } from './social-presentation';
 
 const openingText = async (view: any, reply = '我陪你把这段初行走完。'): Promise<AppMessage> =>
   formatToAppMessage((await import('../game/opening-message')).openingFormat(view), reply);
@@ -202,6 +203,7 @@ export type DesktopPanel = AppMessage & {
       name: string;
       danger: number;
       isCurrent: boolean;
+      bounds?: NonNullable<AppMapData['maps']>[number]['bounds'];
       current?: { x: number; y: number; z: number };
     }[];
     members: NonNullable<AppMapData['partyMembers']>;
@@ -218,7 +220,12 @@ export type DesktopPanel = AppMessage & {
       y: number;
       z: number;
       distance: number;
+      regionId?: number;
+      regionCode?: string;
       code?: string;
+      templateCode?: string;
+      level?: number;
+      portrait?: SocialPortrait;
       interaction?: { type: string; id: string };
       observedOnly?: boolean;
     }[];
@@ -229,6 +236,7 @@ export type DesktopPanel = AppMessage & {
       id: number;
       code: string;
       name: string;
+      rarity: string;
       itemType: string;
       itemCategory: string;
       quantity: number;
@@ -239,6 +247,7 @@ export type DesktopPanel = AppMessage & {
       code: string;
       definitionCodexId: string;
       name: string;
+      rarity: string;
       itemType: string;
       itemCategory: string;
       quality: number;
@@ -247,7 +256,7 @@ export type DesktopPanel = AppMessage & {
       boundKind?: string;
       description?: string;
     }[];
-    recent: { id: number; code: string; name: string; itemType: string; itemCategory: string }[];
+    recent: { id: number; code: string; name: string; rarity: string; itemType: string; itemCategory: string }[];
   };
   /** 角色页的进化摘要；详情仍由本体命令负责。 */
   evolution?: { unlocked: boolean; level: number; title: string; progress: number; nextRequirement: string };
@@ -313,8 +322,8 @@ export type DesktopPanel = AppMessage & {
       weaponType?: string | null;
       appearanceName?: string;
     }[];
-    movement?: { step: number; maximum: number };
-    travel?: { destination: string; remaining: number };
+    movement?: { step: number; maximum: number; speed?: number };
+    travel?: { destination: string; remaining: number; activityType?: 'move' | 'hunt'; visual?: import('../game/travel-visual').TravelVisual };
     unreadMail: number;
     encounter?: { count: number };
   };
@@ -430,7 +439,7 @@ const moveText = async (qqUserId: string, direction: string): Promise<AppMessage
 const mapTravelText = async (qqUserId: string, mapCode: string): Promise<AppMessage> => {
   const result = await moveToMap(qqUserId, mapCode);
   const text = 'text' in result && result.text ? String(result.text) : '你开始前往目标地点。';
-  return plainAppMessage(text, [], '路上小心。');
+  return { ...plainAppMessage(text, [], '路上小心。'), ...('movementVisual' in result && result.movementVisual ? { movementVisual: result.movementVisual } : {}) };
 };
 
 /**
@@ -482,6 +491,11 @@ const mapDataFor = async (
     regionName: String(character.regionName ?? ''), x: Number(character.x), y: Number(character.y), z: Number(character.z)
   });
   const focusCodes = [...new Set(partyMembers.map(member => member.regionCode).filter(Boolean))];
+  const memberIdentities = await socialIdentities(pool, partyMembers.map(member => member.gameId));
+  for (const member of partyMembers) {
+    const portrait = memberIdentities.get(member.gameId)?.portrait;
+    if (portrait) member.portrait = portrait;
+  }
   const landmarks: NonNullable<AppMapData['landmarks']> = [];
   if (focusCodes.length) {
     const placeholders = focusCodes.map(() => '?').join(',');
@@ -542,7 +556,7 @@ const mapText = async (qqUserId: string): Promise<AppMessage> => {
 
 const moveToCoordinateText = async (qqUserId: string, x: number, y: number, z: number): Promise<AppMessage> => {
   const result = await moveTo(qqUserId, x, y, z);
-  if ('text' in result && result.text) return plainAppMessage(String(result.text), [{ label: '查看面板', command: '/面板' }], '路线已经安排好了。');
+  if ('text' in result && result.text) return { ...plainAppMessage(String(result.text), [{ label: '查看面板', command: '/面板' }], '路线已经安排好了。'), ...('movementVisual' in result && result.movementVisual ? { movementVisual: result.movementVisual } : {}) };
   if (result.kind === 'travel') return plainAppMessage(`已规划前往坐标（${x}, ${y}, ${z}），预计 ${result.seconds} 秒。`, [{ label: '查看面板', command: '/面板' }], '路上小心。');
   return plainAppMessage(`已抵达坐标（${x}, ${y}, ${z}）。`, [{ label: '查看面板', command: '/面板' }], '到了。');
 };
@@ -1461,6 +1475,12 @@ export const pendingAppStory = async (qqUserId: string, hasCharacter: boolean, i
       messages: [await openingText(opening)]
     };
   }
+  const leaf = await (await import('../game/floating-leaf.service')).currentFloatingTour(qqUserId);
+  if (leaf) return { revision: `floating-tour:${leaf.stage}`, messages: [formatToAppMessage(
+    (await import('../response/floating-leaf')).floatingSceneFormat(leaf))] };
+  const tree = await (await import('../game/worldtree-witness.service')).currentWorldtreeTour(qqUserId);
+  if (tree) return { revision: `worldtree-tour:${tree.stage}`, messages: [formatToAppMessage(
+    (await import('../response/worldtree-witness')).worldtreeWitnessFormat(tree))] };
   const forest = await forestGuideSnapshot(qqUserId);
   if (!forest) return undefined;
   const message = forest.chapter === 'forest'
@@ -1496,12 +1516,17 @@ export const appQuickPanel = async (session: AppSession): Promise<DesktopPanel> 
   ]);
   const realmStage = Number((character as { realmStage?: number } | null)?.realmStage ?? 0);
   const mapData = character ? await mapDataFor(character, qqUserId) : undefined;
+  // Presentation only: enrich only the already visible, authorized nearby players.
+  const nearbyPlayerIdentities = nearby
+    ? await socialIdentities(await getPool(), nearby.points.filter(point => point.type === '玩家').map(point => Number(point.code)))
+    : new Map();
   const regionMap = mapData ? {
     currentRegionCode: mapData.partyMembers?.find(member => member.isSelf)?.regionCode ?? '',
     regions: mapData.maps.map(map => {
       const member = mapData.partyMembers?.find(item => item.regionCode === map.code && item.isSelf);
       return {
         code: map.code, name: map.name, danger: map.danger, isCurrent: map.isCurrent,
+        ...(map.bounds ? { bounds: map.bounds } : {}),
         ...(member ? { current: { x: member.x, y: member.y, z: member.z } } : {})
       };
     }),
@@ -1563,8 +1588,8 @@ export const appQuickPanel = async (session: AppSession): Promise<DesktopPanel> 
       ...(item.appearanceName ? { appearanceName: String(item.appearanceName) } : {})
     })),
     portrait: portraitForCharacter(character),
-    ...(movement ? { movement: { step: Number(movement.step), maximum: Number(movement.maximum) } } : {}),
-    ...(travel ? { travel: { destination: String(travel.destinationName ?? travel.regionName ?? ''), remaining: Number(travel.remaining ?? 0), activityType: travel.activityType } } : {}),
+    ...(movement ? { movement: { step: Number(movement.step), maximum: Number(movement.maximum), speed: Number(movement.speed) } } : {}),
+    ...(travel ? { travel: { destination: String(travel.destinationName ?? travel.regionName ?? ''), remaining: Number(travel.remaining ?? 0), activityType: travel.activityType, ...(travel.visual ? { visual: travel.visual } : {}) } } : {}),
     unreadMail: 0,
       ...(encounter?.spawns?.length ? { encounter: { count: encounter.spawns.length } } : {})
   } : undefined;
@@ -1606,7 +1631,13 @@ export const appQuickPanel = async (session: AppSession): Promise<DesktopPanel> 
           y: Number(point.y),
           z: Number(point.z),
           distance: Number(point.distance),
+          ...(point.regionId !== undefined ? { regionId: Number(point.regionId) } : {}),
+          ...(point.regionCode ? { regionCode: point.regionCode } : {}),
           ...(point.code ? { code: point.code } : {}),
+          ...(point.templateCode ? { templateCode: point.templateCode } : {}),
+          ...(typeof point.level === 'number' && Number.isFinite(point.level) ? { level: point.level } : {}),
+          ...(point.type === '玩家' && nearbyPlayerIdentities.get(Number(point.code))?.portrait
+            ? { portrait: nearbyPlayerIdentities.get(Number(point.code))!.portrait } : {}),
           ...(point.interaction ? { interaction: { type: String(point.interaction.type), id: String(point.interaction.id) } } : {}),
           ...(point.observedOnly !== undefined ? { observedOnly: point.observedOnly } : {})
         }))
@@ -1616,18 +1647,21 @@ export const appQuickPanel = async (session: AppSession): Promise<DesktopPanel> 
         inventory: {
           stacked: inventory.stacked.map(item => ({
             id: Number(item.id), code: String(item.code), name: String(item.name),
+            rarity: String(item.rarity ?? '普通'),
             itemType: String(item.item_type), itemCategory: String(item.item_category),
             quantity: Number(item.quantity), description: String(item.description ?? '')
           })),
           instances: inventory.instances.map(item => ({
             id: Number(item.id), code: String(item.code), definitionCodexId: String(item.definition_codex_id),
             name: String(item.name), itemType: String(item.item_type), itemCategory: String(item.item_category),
+            rarity: String(item.rarity ?? '普通'),
             quality: Number(item.quality), durability: Number(item.durability),
             durabilityMax: Number(item.durability_max), boundKind: String(item.bound_kind ?? ''),
             description: String(item.description ?? '')
           })),
           recent: inventory.recent.map(item => ({
             id: Number(item.id), code: String(item.code), name: String(item.name),
+            rarity: String(item.rarity ?? '普通'),
             itemType: String(item.item_type), itemCategory: String(item.item_category)
           }))
         }

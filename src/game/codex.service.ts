@@ -5,7 +5,7 @@ export const codexKinds = ['装备', '道具', '材料', '怪物', '技能'] as 
 export type CodexKind = (typeof codexKinds)[number];
 
 type CodexCategory = { label: string; value: string };
-type CodexEntry = { id: number; name: string; category: string; detailId: string };
+type CodexEntry = { id: number; code?: string; name: string; category: string; detailId: string };
 type Character = RowDataPacket & { id: number; level: number };
 
 const categories: Record<CodexKind, CodexCategory[]> = {
@@ -46,8 +46,8 @@ export const codexList = async (qqUserId: string, kind: CodexKind, category = '�
   if (keyword.trim()) { conditions.push(`${config.name} LIKE ?`); params.push(`%${keyword.trim()}%`); }
   const where = conditions.join(' AND '); const [countRows] = await pool.execute<(RowDataPacket & { total: number })[]>(`SELECT COUNT(*) AS total ${config.from} WHERE ${where}`, params);
   const total = Number(countRows[0]?.total ?? 0); const pageSize = 5; const totalPages = Math.max(1, Math.ceil(total / pageSize)); const currentPage = Math.min(Math.max(1, Math.floor(page)), totalPages);
-  const [rows] = await pool.execute<(RowDataPacket & CodexEntry)[]>(`SELECT ${config.id} AS id,${config.name} AS name,${expression} AS category,${config.detail} AS detailId ${config.from} WHERE ${where} ORDER BY ${config.id} LIMIT ? OFFSET ?`, [...params, String(pageSize), String((currentPage - 1) * pageSize)]);
-  return { kind, category: categoryName, keyword: keyword.trim(), entries: rows.map(row => ({ id: Number(row.id), name: row.name, category: row.category, detailId: String(row.detailId) })), page: currentPage, totalPages };
+  const [rows] = await pool.execute<(RowDataPacket & CodexEntry)[]>(`SELECT ${config.id} AS id,${config.name} AS name,${expression} AS category,${config.detail} AS detailId${kind === '技能' ? ',s.code AS code' : ''} ${config.from} WHERE ${where} ORDER BY ${config.id} LIMIT ? OFFSET ?`, [...params, String(pageSize), String((currentPage - 1) * pageSize)]);
+  return { kind, category: categoryName, keyword: keyword.trim(), entries: rows.map(row => ({ id: Number(row.id), ...(kind === '技能' ? { code: String(row.code) } : {}), name: row.name, category: row.category, detailId: String(row.detailId) })), page: currentPage, totalPages };
 };
 
 export const skillCodexDetail = async (qqUserId: string, skillId: number) => {

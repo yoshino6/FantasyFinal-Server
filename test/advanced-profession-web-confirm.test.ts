@@ -76,6 +76,7 @@ test('web world tree profession chain previews, rechecks and confirms each step 
     }
   };
   const modules: Record<string, unknown> = {
+    '../game/story-illustrations': { appStoryIllustrationFor: () => undefined },
     'node:crypto': { randomUUID: uuid },
     '../database/pool': { withTransaction: async (work: (connection: unknown) => Promise<unknown>) => work({}) },
     '../game/alchemy-journal.service': {

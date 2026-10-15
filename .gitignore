@@ -13,3 +13,11 @@ alemon.yaml
 *.key
 *.pfx
 *.p12
+/lib/
+/test/artifacts/
+/.codex-mainline-tests/
+/.interactive-*-stage*/
+/.map-*-stage*/
+/.map-surface-releases/
+/.tmp*/
+.alemonx-id

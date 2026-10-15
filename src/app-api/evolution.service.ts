@@ -2,8 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { getPool, withTransaction } from '../database/pool';
 import { craftCharacterId, createCraftRequest, craftRequestFor, completeCraftRequest } from '../game/alchemy-journal.service';
 import { recalculateCharacterStats } from '../game/character.service';
+import { experienceRequiredForLevel } from '../game/constants';
 import { bodyPartNames, evolutionLabSite, evolutionPanel, mutationDetail, requireEvolutionLabTarget,
-  setMutationPausedInTransaction } from '../game/evolution.service';
+  setMutationPausedInTransaction, evolutionInjectionParts, evolutionObservationDashboard, shapingDraft,
+  symbiosisTraits } from '../game/evolution.service';
 
 type MutationAction = 'pause' | 'resume';
 type Snapshot = { mutationId: number; action: MutationAction; quote: Record<string, unknown>; idempotencyKey: string };
@@ -27,12 +29,19 @@ export const evolutionStatus = async (qqUserId: string) => {
   if (!panel) return { profileOpened: false, lab, character: null, profile: null, materials: [], injections: [], mutations: [], history: [] };
   return {
     profileOpened: true, lab,
-    character: { level: Number(panel.character.level), experience: Number(panel.character.experience), realmStage: Number(panel.character.realm_stage) },
+    character: { level: Number(panel.character.level), experience: Number(panel.character.experience), realmStage: Number(panel.character.realm_stage), experienceRequired: experienceRequiredForLevel(Number(panel.character.level)) },
     profile: { unlockedLevel: Number(panel.profile.unlocked_level), injectionCount: Number(panel.profile.injection_count),
       evolutionScale: Number(panel.profile.evolution_scale), adaptationPressure: Number(panel.profile.adaptation_pressure),
       stability: Number(panel.profile.stability), symbiosisTraitCode: panel.profile.symbiosis_trait_code,
       lineageMarks: jsonValue(panel.profile.lineage_marks_json), finalTraitIds: jsonValue(panel.profile.final_traits_json) },
     materials: panel.materials, injections: panel.injections.map(item => ({ ...item, name: panel.injectionNames[item.code] })),
+    availableInjections: panel.available.map(code => ({ code, name: panel.injectionNames[code], parts: evolutionInjectionParts(code) })),
+    observations: await evolutionObservationDashboard(qqUserId),
+    shaping: lab.atSite && Number(panel.profile.unlocked_level) === 29 ? await shapingDraft(qqUserId).then(draft => ({
+      required: draft.required, selectedIds: draft.selectedIds,
+      traits: draft.traits.map(trait => ({ id: Number(trait.id), name: trait.mutation_name, bodyPartName: bodyPartNames[trait.body_part] }))
+    })) : null,
+    symbiosisChoices: Object.entries(symbiosisTraits).map(([code, trait]) => ({ code, name: trait.name, partyText: trait.partyText, soloText: trait.soloText })),
     mutations: panel.mutations.map(mutation => ({ id: Number(mutation.id), name: mutation.mutation_name,
       bodyPart: mutation.body_part, bodyPartName: bodyPartNames[mutation.body_part], state: mutation.mutation_state,
       tier: Number(mutation.tier), sourceInjection: mutation.source_injection,

@@ -24,6 +24,7 @@ const isAppMode = () => process.env.login === 'app' || process.env.login === 'se
 installGroupReplyMention();
 
 let settlingDueTravels = false;
+let settlingDueEnvironment = false;
 let settlingInactiveCombatSessions = false;
 let recoveringMonsterCardGrants = false;
 const combatTimeoutSweepMs = 10_000;
@@ -350,6 +351,11 @@ appGroup.use('刷新行动', () => import('./response/adventure').then(module =>
 appGroup.use({ path: '开采', schema: { usage: '/开采 <资源编号>', args: [{ name: 'id', rules: [{ required: true, type: 'number', min: 1 }] }] } }, () => import('./response/adventure').then(module => ({ default: module.mineResourceHandler })))
 appGroup.use('刷新开采', () => import('./response/adventure').then(module => ({ default: module.refreshMiningHandler })))
 appGroup.use('取消开采', () => import('./response/adventure').then(module => ({ default: module.cancelMiningHandler })))
+appGroup.use({ path: '景物详情', schema: { usage: '/景物详情 <景物编号>', args: [{ name: 'id', rules: [{ required: true }] }] } }, () => import('./response/map-environment').then(module => ({ default: module.mapEnvironmentHandler('inspect') })))
+appGroup.use({ path: '清理景物', schema: { usage: '/清理景物 <景物编号>', args: [{ name: 'id', rules: [{ required: true }] }] } }, () => import('./response/map-environment').then(module => ({ default: module.mapEnvironmentHandler('start') })))
+appGroup.use('刷新清理', () => import('./response/map-environment').then(module => ({ default: module.mapEnvironmentHandler('status') })))
+appGroup.use({ path: '结算清理', schema: { usage: '/结算清理 [景物编号]', args: [{ name: 'id', rules: [] }] } }, () => import('./response/map-environment').then(module => ({ default: module.mapEnvironmentHandler('settle') })))
+appGroup.use('取消清理', () => import('./response/map-environment').then(module => ({ default: module.mapEnvironmentHandler('cancel') })))
 appGroup.use({ path: '目标', schema: { usage: '/目标 <编号>', args: [{ name: 'id', rules: [{ required: true, type: 'number', min: 1 }] }] } }, () => import('./response/target'))
 appGroup.use({ path: '怪物攻击', schema: { usage: '/怪物攻击 <怪物编号>', args: [{ name: 'id', rules: [{ required: true, type: 'number', min: 1 }] }] } }, () => import('./response/adventure').then(module => ({ default: module.nearbyMonsterAttackHandler })))
 appGroup.use({ path: '怪物交互', schema: { usage: '/怪物交互 <怪物编号>', args: [{ name: 'id', rules: [{ required: true, type: 'number', min: 1 }] }] } }, () => import('./response/adventure').then(module => ({ default: module.nearbyMonsterInteractionHandler })))
@@ -785,6 +791,14 @@ export default defineChildren({
         .catch(error => logger.warn({ err: error }, '到期移动补偿结算失败'))
         .finally(() => { settlingDueTravels = false; });
     }, 1000);
+    setInterval(() => {
+      if (settlingDueEnvironment) return;
+      settlingDueEnvironment = true;
+      void runMonitoredJob('environment.settlement', () => import('./game/map-environment.service').then(module => module.settleDueEnvironmentClearings()))
+        .then(result => { if (result.failed) logger.warn({ failed: result.failed }, '部分清理作业未能结算，进度已保留'); })
+        .catch(error => logger.warn({ err: error }, '到期障碍清理结算失败'))
+        .finally(() => { settlingDueEnvironment = false; });
+    }, 5000);
     setInterval(() => {
       if (settlingInactiveCombatSessions) return;
       settlingInactiveCombatSessions = true;

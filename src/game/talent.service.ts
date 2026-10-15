@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import type { PoolConnection, RowDataPacket } from 'mysql2/promise';
 import { withTransaction } from '../database/pool';
 import { assertCombatLoadoutMutable } from './combat-loadout-lock.service';
+import { assertEnvironmentIdle } from './map-environment.service';
 import { ownedTalent, emptyTalentData, readTalentData, saveTalentData, talentDay, type TalentData } from './talent-data';
 import { secondaryProfessionMaxLevel, secondaryProfessionProficiencyRequired } from './secondary-profession';
 import { grantInventory, consumeInventory } from './inventory-binding';
@@ -77,6 +78,7 @@ const view=async(connection:PoolConnection,actor:Record<string,any>,talent:Talen
   return{name:talent.name,description:talent.description,revision:Number(rows[0]?.revision??0),text:[text,...notes].filter(Boolean).join('\n'),jobs:data.jobs.map(j=>({id:j.id,kind:j.kind,detail:j.kind==='review'?`${j.payload.kind==='experience'?'角色经验':'副职业熟练度'} ${j.payload.amount}；复盘${j.payload.workSeconds}秒`:j.kind==='letter'?(j.payload.preview.map((o:any)=>`${names.get(o.code)??'物品'}×${o.quantity}`).join('、')||'空包'):undefined,remaining:Math.max(0,Math.ceil((j.ready-Date.now())/1000))})),commands,commandLabels};
 };
 const active=async(connection:PoolConnection,actor:Record<string,any>,allowRest=false)=>{
+  await assertEnvironmentIdle(connection,Number(actor.id));
   await assertCombatLoadoutMutable(connection,Number(actor.id));
   const [busy]=await connection.execute<RowDataPacket[]>('SELECT 1 FROM player_travels WHERE character_id=? UNION ALL SELECT 1 FROM player_resource_mining WHERE character_id=?',[actor.id,actor.id]);
   if(busy.length||Number(actor.current_hp)<=0||(!allowRest&&actor.activity_status!=='active'))throw new Error('请先结束移动、开采、休息或其他活动。');

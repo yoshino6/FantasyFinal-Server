@@ -1,0 +1,255 @@
+{
+  "frozenVersion": 2,
+  "seed": "fantasyfinal:environment:v2",
+  "generatorSourceSha256": "413fd01a6121c7b30f2641dcfedf327ee99dbeeaa78eb0b33dd02e6fff1f8dc4",
+  "fieldSourceSha256": "cbc3e3e37c49fc2e5cd5a716d77ac31f8da58d451779c05e7afed73ecc6c0935",
+  "points": [
+    {
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "field": {
+        "cover": 0.3454767923664477,
+        "moisture": 0.9225969831594736,
+        "fertility": 0.4015840253616627,
+        "shade": 0.6717641971253552,
+        "rock": 0.4303945192047144,
+        "flowers": 0.7659036282500766
+      }
+    },
+    {
+      "x": -17,
+      "y": 9,
+      "z": 0,
+      "field": {
+        "cover": 0.7128869199540215,
+        "moisture": 0.5367017896727102,
+        "fertility": 0.5018854660091818,
+        "shade": 0.6059495901844167,
+        "rock": 0.06623245168183345,
+        "flowers": 0.46906977545957285
+      }
+    },
+    {
+      "x": 15.25,
+      "y": -30.5,
+      "z": 0,
+      "field": {
+        "cover": 0.4540522013450608,
+        "moisture": 0.31496989688496346,
+        "fertility": 0.37536634434751626,
+        "shade": 0.5769400099015155,
+        "rock": 0.6443210945326984,
+        "flowers": 0.7080968078293381
+      }
+    },
+    {
+      "x": 120,
+      "y": -60,
+      "z": 1,
+      "field": {
+        "cover": 0.2560480096493226,
+        "moisture": 0.20034860069400368,
+        "fertility": 0.13446527026760052,
+        "shade": 0.6768437678072919,
+        "rock": 0.3579433250895483,
+        "flowers": 0.5430378930161758
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "dark_forest",
+      "area": {
+        "regionId": 7,
+        "code": "dark_forest",
+        "danger": 2,
+        "enabled": true,
+        "minX": -120,
+        "maxX": 119,
+        "minY": -120,
+        "maxY": 119,
+        "minZ": 0,
+        "maxZ": 0,
+        "generationVersion": 2,
+        "generationSeed": "fantasyfinal:environment:v2"
+      },
+      "rectangle": {
+        "x": -60,
+        "y": -60,
+        "width": 120,
+        "height": 120
+      },
+      "protections": [],
+      "count": 416,
+      "sha256": "c58f5902aebe39faafd63e56f59c70b1db217951a03d8e843bb8009417d61834",
+      "templates": {
+        "living_birch": 197,
+        "living_oak": 108,
+        "living_pine": 68,
+        "moss_boulder": 43
+      }
+    },
+    {
+      "name": "worldtree_meadow",
+      "area": {
+        "regionId": 7,
+        "code": "worldtree_meadow",
+        "danger": 2,
+        "enabled": true,
+        "minX": -120,
+        "maxX": 119,
+        "minY": -120,
+        "maxY": 119,
+        "minZ": 0,
+        "maxZ": 0,
+        "generationVersion": 2,
+        "generationSeed": "fantasyfinal:environment:v2"
+      },
+      "rectangle": {
+        "x": -60,
+        "y": -60,
+        "width": 120,
+        "height": 120
+      },
+      "protections": [],
+      "count": 183,
+      "sha256": "07bfaab11e4acbed01b8ebbbda9a9cc21ebb130deb2f97836af237954aa53016",
+      "templates": {
+        "living_birch": 83,
+        "living_oak": 47,
+        "moss_boulder": 53
+      }
+    },
+    {
+      "name": "morningdew_riverbank",
+      "area": {
+        "regionId": 7,
+        "code": "morningdew_riverbank",
+        "danger": 2,
+        "enabled": true,
+        "minX": -120,
+        "maxX": 119,
+        "minY": -120,
+        "maxY": 119,
+        "minZ": 0,
+        "maxZ": 0,
+        "generationVersion": 2,
+        "generationSeed": "fantasyfinal:environment:v2"
+      },
+      "rectangle": {
+        "x": -60,
+        "y": -60,
+        "width": 120,
+        "height": 120
+      },
+      "protections": [],
+      "count": 245,
+      "sha256": "57c3120b6305cf8645c723268c3c7f2a6bf3ad22c974abca2e8866a75962a796",
+      "templates": {
+        "living_birch": 131,
+        "living_oak": 62,
+        "moss_boulder": 52
+      }
+    },
+    {
+      "name": "frostcrown_plateau",
+      "area": {
+        "regionId": 7,
+        "code": "frostcrown_plateau",
+        "danger": 2,
+        "enabled": true,
+        "minX": -120,
+        "maxX": 119,
+        "minY": -120,
+        "maxY": 119,
+        "minZ": 0,
+        "maxZ": 0,
+        "generationVersion": 2,
+        "generationSeed": "fantasyfinal:environment:v2"
+      },
+      "rectangle": {
+        "x": -60,
+        "y": -60,
+        "width": 120,
+        "height": 120
+      },
+      "protections": [],
+      "count": 248,
+      "sha256": "f66e7c542394df0aba1386f25ec69ceccbd1c38c0e8e29c026a00962bbc91ebc",
+      "templates": {
+        "living_pine": 175,
+        "moss_boulder": 73
+      }
+    },
+    {
+      "name": "eclipse_ruins",
+      "area": {
+        "regionId": 7,
+        "code": "eclipse_ruins",
+        "danger": 2,
+        "enabled": true,
+        "minX": -120,
+        "maxX": 119,
+        "minY": -120,
+        "maxY": 119,
+        "minZ": 0,
+        "maxZ": 0,
+        "generationVersion": 2,
+        "generationSeed": "fantasyfinal:environment:v2"
+      },
+      "rectangle": {
+        "x": -60,
+        "y": -60,
+        "width": 120,
+        "height": 120
+      },
+      "protections": [],
+      "count": 229,
+      "sha256": "777e8af3217f57e62699bae27f699a954be88902c1be75237b960cac9e0f10f4",
+      "templates": {
+        "living_birch": 57,
+        "moss_boulder": 172
+      }
+    },
+    {
+      "name": "negative-partial-protection",
+      "area": {
+        "regionId": 7,
+        "code": "dark_forest",
+        "danger": 2,
+        "enabled": true,
+        "minX": -120,
+        "maxX": 119,
+        "minY": -120,
+        "maxY": 119,
+        "minZ": 0,
+        "maxZ": 0,
+        "generationVersion": 2,
+        "generationSeed": "fantasyfinal:environment:v2"
+      },
+      "rectangle": {
+        "x": -28,
+        "y": -35,
+        "width": 27,
+        "height": 31
+      },
+      "protections": [
+        {
+          "x": -9,
+          "y": -8,
+          "z": 0,
+          "radius": 2
+        }
+      ],
+      "count": 34,
+      "sha256": "0b7556f87d97e175f8d1956030047efbdb4cbe0a3fe03cf96a0512722df680f9",
+      "templates": {
+        "living_birch": 14,
+        "living_oak": 16,
+        "living_pine": 2,
+        "moss_boulder": 2
+      }
+    }
+  ]
+}

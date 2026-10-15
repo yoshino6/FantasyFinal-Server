@@ -3913,4 +3913,6 @@ export const initializeSchema = async (pool: Pool) => {
   await (await import('./travel-routes')).initializeTravelRoutes(pool);
   await (await import('./equipment-workshop')).initializeEquipmentWorkshop(pool);
   await (await import('./map-hidden-advanced-professions')).initializeMapHiddenAdvancedProfessions(pool);
+  await (await import('./map-environment')).initializeMapEnvironment(pool);
+  await (await import('./map-surface-marks')).initializeMapSurfaceMarks(pool);
 };

@@ -31,6 +31,7 @@ export type IssuedCoreInteractionResult = CoreInteractionPresentation & {
   expiresAt: string;
   messages: CoreInteractionMessage[];
   serverTime: string;
+  movementVisual?: CoreRouteExecution['movementVisual'];
 };
 
 export class CoreInteractionActionError extends Error {
@@ -232,7 +233,7 @@ export const createCoreInteractionActionService = (overrides: Partial<Dependenci
         buttons
       };
     });
-    return { ...coreInteractionPresentation(executedCommand, execution.formats), revision, expiresAt: new Date(expiresAt).toISOString(), messages, serverTime: new Date(now).toISOString() };
+    return { ...coreInteractionPresentation(executedCommand, execution.formats), revision, expiresAt: new Date(expiresAt).toISOString(), messages, serverTime: new Date(now).toISOString(), ...(execution.movementVisual ? { movementVisual: execution.movementVisual } : {}) };
   };
 
   const issue = async (input: IssueInput): Promise<IssuedCoreInteractionResult> => {

@@ -21,6 +21,8 @@ export type AppMapData = {
     name: string;
     isLeader: boolean;
     isSelf: boolean;
+    /** 已授权队友的实际职业外观；不参与移动或成员权限。 */
+    portrait?: { baseKey: string; poseKey: string; fallbackKey?: string };
     regionCode: string;
     regionName: string;
     x: number;
@@ -50,6 +52,7 @@ export type AppMessage = {
   buttons: AppButton[];
   petReply?: string;
   mapData?: AppMapData;
+  movementVisual?: import('../game/movement-visual').MovementVisual;
 };
 
 type FormatNode = AppFormatNode;

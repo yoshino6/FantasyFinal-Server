@@ -39,6 +39,20 @@ test('safe commerce menus select the existing quote-based shop, without classify
   assert.deepEqual(coreInteractionPresentation('/书屋购买搜索 魔法'), { presentation: 'interaction', commerce: { kind: 'bookshop', mode: 'buy' } });
   assert.deepEqual(coreInteractionPresentation('/百纳居'), { presentation: 'interaction', commerce: { kind: 'homeShop' } });
   assert.deepEqual(coreInteractionPresentation('/购买商品 1 1'), { presentation: 'interaction' });
-  const story = [[{ type: 'Markdown', value: [{ type: 'MD.title', value: '初章·初行之路' }] }]];
+  const story = [[{ type: 'Markdown', value: [{ type: 'MD.title', value: '初章·林间岔路' }] }]];
   assert.deepEqual(coreInteractionPresentation('/建筑进入 bookshop', story), { presentation: 'story' });
+});
+
+test('gift and armed handoffs release the map, while completed openings use a closable guild menu', () => {
+  const format = (title: string) => [[{ type: 'Markdown', value: [{ type: 'MD.title', value: title }] }]];
+  for (const title of ['天赋已觉醒', '初章·初行之路', '旅者已归来']) {
+    assert.deepEqual(coreInteractionPresentation('/选择恩赐 A01', format(title)), { presentation: 'page', destination: 'explore' });
+    assert.deepEqual(coreInteractionPresentation('/继续剧情', format(title)), { presentation: 'page', destination: 'explore' });
+  }
+  assert.deepEqual(coreInteractionPresentation('/初行选择 14 next', format('百纳镇·冒险者公会')), { presentation: 'interaction' });
+  assert.deepEqual(coreInteractionPresentation('/初行公会'), { presentation: 'interaction' });
+  assert.deepEqual(coreInteractionPresentation('/前往 1 2 0'), { presentation: 'page', destination: 'explore' });
+  assert.deepEqual(coreInteractionPresentation('/前往 1 2 0', format('初章·林间岔路')), { presentation: 'story' });
+  assert.deepEqual(coreInteractionPresentation('/进化研究室'), { presentation: 'page', destination: 'evolution' });
+  assert.deepEqual(coreInteractionPresentation('/二转职业 mentor_warlord_oren'), { presentation: 'page', destination: 'advancedProfession' });
 });

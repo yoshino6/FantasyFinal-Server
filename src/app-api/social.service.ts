@@ -5,10 +5,12 @@ import { getPool, withTransaction } from '../database/pool';
 import { appSessionQqUser, type AppSession } from '../game/app-channel.service';
 import { createParty, joinParty, leaveParty, partyInfo, renameParty } from '../game/adventure.service';
 import { forestStoryPartyCondition, isForestStoryParty } from '../game/story-party';
+import { socialIdentities, type SocialPortrait } from './social-presentation';
 
 type Db = Awaited<ReturnType<typeof getPool>> | PoolConnection;
 
 export type ChatChannel = {
+  portrait?: SocialPortrait;
   id: string;
   type: 'world' | 'friend' | 'party';
   name: string;
@@ -18,6 +20,7 @@ export type ChatChannel = {
 };
 
 export type ChatMessage = {
+  senderPortrait?: SocialPortrait;
   id: number;
   channelId: string;
   senderId: number;
@@ -30,6 +33,7 @@ export type ChatMessage = {
 };
 
 export type PartyRecruitment = {
+  leaderPortrait?: SocialPortrait;
   id: number;
   partyId: string;
   partyName: string;
@@ -280,7 +284,8 @@ const recruitmentView = (row: RecruitmentRow, session: AppSession): PartyRecruit
 const recruitmentsByIds = async (session: AppSession, db: Db, ids: number[]) => {
   if (!ids.length) return new Map<number, PartyRecruitment>();
   const [rows] = await db.execute<RecruitmentRow[]>(`${recruitmentSelect} ${recruitmentFrom} WHERE r.id IN (${ids.map(() => '?').join(',')})`, [Number(session.characterId ?? 0), ...ids]);
-  return new Map(rows.map(row => [Number(row.id), recruitmentView(row, session)]));
+  const identities = await socialIdentities(db, rows.map(row => Number(row.leader_game_id)));
+  return new Map(rows.map(row => [Number(row.id), { ...recruitmentView(row, session), leaderPortrait: identities.get(Number(row.leader_game_id))?.portrait }]));
 };
 
 export const listChatChannels = async (session: AppSession): Promise<ChatChannel[]> => {
@@ -292,7 +297,8 @@ export const listChatChannels = async (session: AppSession): Promise<ChatChannel
   const characterId = Number(session.characterId);
   const [friends] = await pool.execute<(RowDataPacket & { game_id: number; name: string })[]>(`SELECT c.game_id,c.name FROM player_relationships r JOIN characters c ON c.id=CASE WHEN r.character_low_id=? THEN r.character_high_id ELSE r.character_low_id END
     WHERE (r.character_low_id=? OR r.character_high_id=?) AND r.status IN ('friend','oath') ORDER BY c.name LIMIT 50`, [characterId, characterId, characterId]);
-  for (const friend of friends) channels.push({ id: `friend:${Number(friend.game_id)}`, type: 'friend', name: `好友·${text(friend.name, 32)}`, gameId: Number(friend.game_id), unreadCount: 0 });
+  const identities = await socialIdentities(pool, friends.map(friend => Number(friend.game_id)));
+  for (const friend of friends) channels.push({ ...identities.get(Number(friend.game_id)), id: `friend:${Number(friend.game_id)}`, type: 'friend', name: `好友·${text(friend.name, 32)}`, gameId: Number(friend.game_id), unreadCount: 0 });
   const qqUserId = await appSessionQqUser(session, pool);
   const party = await partyInfo(qqUserId);
   if (party) channels.push({ id: `party:${party.id}`, type: 'party', name: `队伍·${text(party.name, 32)}`, partyId: party.id, unreadCount: 0 });
@@ -313,11 +319,12 @@ export const listChatMessages = async (session: AppSession, channelId: string, l
   }
   if (Number.isSafeInteger(beforeId) && beforeId > 0) { clause += ' AND id<?'; args.push(beforeId); }
   args.push(limit);
-  const [rows] = await pool.execute<(RowDataPacket & { id: number; sender_player_id: number; sender_name: string; content: string; recruitment_id: number | null; created_at: Date | string })[]>(`SELECT id,sender_player_id,sender_name,content,recruitment_id,created_at FROM web_chat_messages WHERE ${clause} ORDER BY id DESC LIMIT ?`, args);
+  const [rows] = await pool.execute<(RowDataPacket & { id: number; sender_player_id: number; sender_character_id: number | null; sender_name: string; content: string; recruitment_id: number | null; created_at: Date | string })[]>(`SELECT id,sender_player_id,sender_character_id,sender_name,content,recruitment_id,created_at FROM web_chat_messages WHERE ${clause} ORDER BY id DESC LIMIT ?`, args);
   const cards = await recruitmentsByIds(session, pool, [...new Set(rows.map(row => Number(row.recruitment_id)).filter(id => Number.isSafeInteger(id) && id > 0))]);
+  const identities = await socialIdentities(pool, rows.map(row => Number(row.sender_character_id)), 'id');
   return rows.reverse().map(row => ({
     id: Number(row.id), channelId, senderId: Number(row.sender_player_id), senderName: text(row.sender_name, 64),
-    content: String(row.content), createdAt: new Date(row.created_at).toISOString(), own: Number(row.sender_player_id) === Number(session.playerId),
+    content: String(row.content), createdAt: new Date(row.created_at).toISOString(), own: Number(row.sender_player_id) === Number(session.playerId), senderPortrait: identities.get(Number(row.sender_character_id))?.portrait,
     ...(row.recruitment_id && cards.has(Number(row.recruitment_id)) ? { recruitmentId: Number(row.recruitment_id), recruitment: cards.get(Number(row.recruitment_id)) } : {})
   }));
 };
@@ -356,7 +363,9 @@ export const currentWebParty = async (session: AppSession) => {
   })[]>(`SELECT c.id,c.game_id,c.name,c.level,m.code AS region_code,m.name AS region_name,c.pos_x,c.pos_y,c.pos_z
     FROM party_members pm JOIN characters c ON c.id=pm.character_id JOIN map_regions m ON m.id=c.current_region_id
     WHERE pm.party_id=? ORDER BY pm.joined_at,c.id`, [party.id]);
+  const identities = await socialIdentities(pool, memberRows.map(row => Number(row.game_id)));
   const members = memberRows.map(row => ({
+    ...identities.get(Number(row.game_id)),
     id: Number(row.id), gameId: Number(row.game_id), name: String(row.name), level: Number(row.level),
     isLeader: Number(row.id) === Number(party.leaderId),
     isSelf: Number(row.id) === Number(party.ownId),
@@ -368,7 +377,7 @@ export const currentWebParty = async (session: AppSession) => {
   await closeEndedRecruitments(pool);
   const [recruitmentRows] = await pool.execute<RecruitmentRow[]>(`${recruitmentSelect} ${recruitmentFrom}
     WHERE r.party_id=? AND r.status='open' AND r.expires_at>NOW() LIMIT 1`, [Number(session.characterId), party.id]);
-  const recruitment = recruitmentRows[0] ? recruitmentView(recruitmentRows[0], session) : null;
+  const recruitment = recruitmentRows[0] ? { ...recruitmentView(recruitmentRows[0], session), leaderPortrait: leader?.portrait } : null;
   const [applicationRows] = recruitment
     ? await pool.execute<(RowDataPacket & { total: number })[]>("SELECT COUNT(*) AS total FROM web_party_applications WHERE recruitment_id=? AND status='pending'", [recruitment.id])
     : [[] as (RowDataPacket & { total: number })[]];
@@ -440,7 +449,8 @@ export const searchPartyRecruitments = async (session: AppSession, filters: {
   const [rows] = await pool.execute<RecruitmentRow[]>(`${recruitmentSelect} ${recruitmentFrom}
     WHERE ${where.join(' AND ')} ORDER BY r.id DESC LIMIT ?`, [...args, limit + 1]);
   const hasMore = rows.length > limit;
-  const items = rows.slice(0, limit).map(row => recruitmentView(row, session));
+  const identities = await socialIdentities(pool, rows.slice(0, limit).map(row => Number(row.leader_game_id)));
+  const items = rows.slice(0, limit).map(row => ({ ...recruitmentView(row, session), leaderPortrait: identities.get(Number(row.leader_game_id))?.portrait }));
   return { recruitments: items, hasMore, nextCursor: hasMore ? items[items.length - 1]?.id ?? null : null };
 };
 
@@ -648,5 +658,6 @@ export const listPartyApplications = async (session: AppSession, recruitmentIdVa
   if (Number(owners[0].leader_character_id) !== leaderCharacterId) throw new Error('只有当前队长可以查看申请。');
   const [rows] = await pool.execute<(RowDataPacket & { id: number; applicant_character_id: number; game_id: number; name: string; message: string; status: string; created_at: Date | string; responded_at: Date | string | null })[]>(`SELECT a.id,a.applicant_character_id,c.game_id,c.name,a.message,a.status,a.created_at,a.responded_at
     FROM web_party_applications a JOIN characters c ON c.id=a.applicant_character_id WHERE a.recruitment_id=? ORDER BY a.created_at DESC LIMIT 50`, [recruitmentId]);
-  return rows.map(row => ({ id: Number(row.id), applicantCharacterId: Number(row.applicant_character_id), gameId: Number(row.game_id), name: text(row.name, 32), message: text(row.message, 300), status: row.status, createdAt: new Date(row.created_at).toISOString(), respondedAt: row.responded_at ? new Date(row.responded_at).toISOString() : null }));
+  const identities = await socialIdentities(pool, rows.map(row => Number(row.game_id)));
+  return rows.map(row => ({ ...identities.get(Number(row.game_id)), id: Number(row.id), applicantCharacterId: Number(row.applicant_character_id), gameId: Number(row.game_id), name: text(row.name, 32), message: text(row.message, 300), status: row.status, createdAt: new Date(row.created_at).toISOString(), respondedAt: row.responded_at ? new Date(row.responded_at).toISOString() : null }));
 };

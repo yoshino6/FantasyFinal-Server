@@ -19,11 +19,13 @@ FantasyFinal:
   appApiServer:
     enabled: true
     listenHost: "127.0.0.1"
-    port: 17117
+    port: 17119
   adminWeb:
     enabled: true
     listenHost: "127.0.0.1"
     port: 17118
+    publicBaseUrl: "https://online.fantasyfinal.net"
+    allowInsecurePublicHttp: false
   coreApi:
     enabled: true
     listenHost: "127.0.0.1"

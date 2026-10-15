@@ -19,12 +19,15 @@ test('web evolution exposes actual mutation candidates and confirms an onsite to
     character: { level: 23, experience: 5, realm_stage: 3 },
     profile: { unlocked_level: 23, injection_count: 3, evolution_scale: 2, adaptation_pressure: 1,
       stability: 62, symbiosis_trait_code: null, lineage_marks_json: '{}', final_traits_json: '[]' },
-    materials: [{ code: 'evolution_stable_medium', quantity: 3 }], injections: [], injectionNames: {},
+    materials: [{ code: 'evolution_stable_medium', quantity: 3 }], injections: [], injectionNames: {}, available: [],
     mutations: [{ id: 5, mutation_name: '余像症', body_part: 'eye', mutation_state: state,
       tier: 1, source_injection: 'perception', effect_json: '{"accuracyPct":-3}', description: '效果：偏差' }],
     history: [{ event_type: 'evolution.injected', payload: '{"code":"perception"}', created_at: '2026-09-28' }]
   });
   const core = {
+    evolutionInjectionParts: () => [],
+    evolutionObservationDashboard: async () => ({ claimed: 0, remaining: 2, active: null, available: [] }),
+    symbiosisTraits: {},
     bodyPartNames: { eye: '眼部' },
     evolutionPanel: async () => panel(),
     evolutionLabSite: async () => ({ unlocked: true, atSite: atLab, target: { id: 'evolution_lab', x: -6, y: 7 } }),
@@ -44,6 +47,7 @@ test('web evolution exposes actual mutation candidates and confirms an onsite to
   };
   const modules: Record<string, unknown> = {
     'node:crypto': { randomUUID: uuid },
+    '../game/constants': { experienceRequiredForLevel: () => 100 },
     '../database/pool': { getPool: async () => connection, withTransaction: async (work: (connection: unknown) => Promise<unknown>) => work(connection) },
     '../game/alchemy-journal.service': {
       craftCharacterId: async () => 7,
