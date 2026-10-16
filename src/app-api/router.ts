@@ -10,6 +10,9 @@ import { registerAdvancedProfessionApiRoutes } from './advanced-profession-route
 import { registerMarketApiRoutes } from './market-routes';
 import { registerSkillApiRoutes } from './skill-routes';
 import { registerEquipmentDetailApiRoutes } from './equipment-detail-routes';
+import { registerProfileApiRoutes } from './profile-routes';
+import { registerPlayerCardApiRoutes } from './player-card-routes';
+import { registerRedeemCodeRoutes } from './redeem-code-routes';
 import { randomUUID } from 'node:crypto';
 import { getAppApiConfig } from '../config/app-api';
 import {
@@ -93,15 +96,15 @@ const apiError = (ctx: Context, status: number, message: string) => {
   ctx.body = { ok: false, message };
 };
 
-const parseBody = async (ctx: Context) => {
+const parseBody = async (ctx: Context, maxBytes = 64 * 1024) => {
   const length = Number(ctx.get('content-length') || 0);
-  if (length > 64 * 1024) throw new Error('请求体过大。');
+  if (length > maxBytes) throw new Error('请求体过大。');
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of ctx.req) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
-    if (size > 64 * 1024) throw new Error('请求体过大。');
+    if (size > maxBytes) throw new Error('请求体过大。');
     chunks.push(buffer);
   }
   const text = Buffer.concat(chunks).toString('utf8').trim();
@@ -275,6 +278,9 @@ export const registerAppApiRoutes = (router: koaRouter, apiPrefix = '/app-api/v1
     registerMarketApiRoutes(router, apiPrefix, { requireSession, parseBody, apiError });
     registerSkillApiRoutes(router, apiPrefix, { requireSession, parseBody, apiError });
     registerEquipmentDetailApiRoutes(router, apiPrefix, { requireSession, apiError });
+    registerProfileApiRoutes(router, apiPrefix, { requireSession, parseBody, apiError });
+    registerPlayerCardApiRoutes(router, apiPrefix, { requireSession, parseBody, apiError });
+    registerRedeemCodeRoutes(router, apiPrefix, { requireSession, parseBody, apiError });
   }
 
   router.get(apiPath('/health'), async (ctx: Context) => {

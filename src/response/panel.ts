@@ -24,7 +24,7 @@ const areaText = (character: LocationCharacter, verb: '位于' | '移动至') =>
 export const currentLocationText = (character: LocationCharacter) => areaText(character, '位于');
 export const movedLocationText = (character: LocationCharacter) => areaText(character, '移动至');
 
-export const outsidePanel = (title: string, location: string, speed: number, range: number, x: number, y: number, description: string, points: NearbyPoint[], resting = false, landmarks: MapLandmark[] = [], speaker = '', speedLimit = speed, perceptionObscured = false, showLandmarks = true, showPlayers = true, mapUnlocked = false, activityStatus?: string, emphasizeSpeaker = false) => {
+export const outsidePanel = (title: string, location: string, speed: number, range: number, x: number, y: number, description: string, points: NearbyPoint[], resting = false, landmarks: MapLandmark[] = [], speaker = '', speedLimit = speed, perceptionObscured = false, showLandmarks = true, showPlayers = true, mapUnlocked = false, activityStatus?: string, emphasizeSpeaker = false, actualMovementSpeed = speedLimit) => {
   const markdown = Format.createMarkdown().addTitle(title).addNewline().addNewline().addText(location).addNewline().addNewline();
   if (speaker) {
     if (emphasizeSpeaker) for (const line of speaker.split('\n')) markdown.addText('> ').addBold(line).addNewline();
@@ -33,7 +33,7 @@ export const outsidePanel = (title: string, location: string, speed: number, ran
   }
   markdown.addBlockquote(description).addNewline().addNewline();
   if (resting) markdown.addText(activityStatus === 'detained' ? '状态：关押中' : activityStatus === 'unconscious' ? '状态：昏迷中' : '状态：休息中（每秒恢复 1% 生命与魔力）').addNewline();
-  markdown.addText(`移动速度：（${speed}/${speedLimit}）`).addButton('[调整移速]', { data: '/调整移速 ', autoEnter: false }).addNewline().addText(`感知范围：${range}`);
+  markdown.addText(`移动速度：${actualMovementSpeed} 格/秒`).addNewline().addText(`单次步长：${speed} 格（上限 ${speedLimit}）`).addButton('[调整步长]', { data: '/调整移速 ', autoEnter: false }).addNewline().addText(`感知范围：${range}`);
   if (perceptionObscured) markdown.addNewline().addBlockquote('压抑的黑暗干扰了你的感知').addNewline();
   const normalLandmarks = sortMapMarkers(landmarks.filter(landmark => landmark.kind !== 'bounty'));
   const entranceLandmarks = normalLandmarks.filter(landmark => landmark.code?.includes('entrance'));
@@ -43,16 +43,16 @@ export const outsidePanel = (title: string, location: string, speed: number, ran
     markdown.addNewline().addNewline().addText('地图标识：').addButton(showLandmarks ? '[折叠]' : '[显示]', { data: `/地图标识 ${showLandmarks ? '折叠' : '显示'}`, autoEnter: false }).addNewline();
     if (showLandmarks) {
       for (const landmark of regularLandmarks) {
-        const seconds = Math.max(1, Math.ceil((Math.abs(landmark.x - x) + Math.abs(landmark.y - y)) / speedLimit));
+        const seconds = Math.max(1, Math.ceil((Math.abs(landmark.x - x) + Math.abs(landmark.y - y)) / actualMovementSpeed));
         markdown.addText('> ').addButton(markerName(landmark), { data: `/前往 ${landmark.x} ${landmark.y} ${landmark.z}`, autoEnter: false }).addText(`（${landmark.x}, ${landmark.y}, ${landmark.z}）[预计${durationText(seconds)}]`).addNewline();
       }
     }
     if (showLandmarks) for (const landmark of bountyLandmarks) {
-      const seconds = Math.max(1, Math.ceil((Math.abs(landmark.x - x) + Math.abs(landmark.y - y)) / speedLimit));
+      const seconds = Math.max(1, Math.ceil((Math.abs(landmark.x - x) + Math.abs(landmark.y - y)) / actualMovementSpeed));
       markdown.addText('> ').addButton(`🎯 ${landmark.name}`, { data: `/前往 ${landmark.x} ${landmark.y} ${landmark.z}`, autoEnter: false }).addText(`（${landmark.x}, ${landmark.y}, ${landmark.z}）[预计${durationText(seconds)}]`).addNewline();
     }
     if (showLandmarks) for (const landmark of entranceLandmarks) {
-      const seconds = Math.max(1, Math.ceil((Math.abs(landmark.x - x) + Math.abs(landmark.y - y)) / speedLimit));
+      const seconds = Math.max(1, Math.ceil((Math.abs(landmark.x - x) + Math.abs(landmark.y - y)) / actualMovementSpeed));
       markdown.addText('> ').addButton(markerName(landmark), { data: `/前往 ${landmark.x} ${landmark.y} ${landmark.z}`, autoEnter: false }).addText(`（${landmark.x}, ${landmark.y}, ${landmark.z}）[预计${durationText(seconds)}]`).addNewline();
     }
   }
@@ -166,7 +166,7 @@ export default async () => {
       const mapEntries = movement.showLandmarks ? nearby.landmarks : [];
       const mapText = nearby.mapUnlocked ? `\n\n地图标识：${mapEntries.length ? `\n${mapEntries.map(landmark => landmark.name).join('\n')}` : ''}` : '';
       const directionTextFallback = Object.entries(directionState.directions).map(([direction, state]) => state.canMove ? `/移动 ${direction}` : `${direction}：${state.label ?? '通路'}阻挡${state.objectId ? `（/景物详情 ${state.objectId}${state.destructible ? `；/清理景物 ${state.objectId}` : ''}）` : ''}`).join('｜');
-      await sendWithTextFallback(message, outsidePanel('操作面板', location, movement.step, nearby.range, x, y, nearby.description, nearby.points, resting, nearby.landmarks, trace ?? '', movement.maximum, nearby.perceptionObscured, movement.showLandmarks, movement.showPlayers, nearby.mapUnlocked, nearby.character.activity_status, true).addButtonGroup(panelButtons(resting, Boolean(autoBattle.settings.enabled), directionState, hiddenMentor)), `【操作面板】\n${location}${trace ? `\n\n${trace}` : ''}\n\n${nearby.description}${mapText}\n\n移动速度：（${movement.step}/${movement.maximum}）\n感知范围：${nearby.range}${nearby.perceptionObscured ? '\n> 压抑的黑暗干扰了你的感知' : ''}${targets}\n\n${directionTextFallback}｜/探索｜/背包｜/感知${hiddenMentor ? `｜/隐藏导师 ${hiddenMentor.professionCode}` : ''}`);
+      await sendWithTextFallback(message, outsidePanel('操作面板', location, movement.step, nearby.range, x, y, nearby.description, nearby.points, resting, nearby.landmarks, trace ?? '', movement.maximum, nearby.perceptionObscured, movement.showLandmarks, movement.showPlayers, nearby.mapUnlocked, nearby.character.activity_status, true, movement.speed).addButtonGroup(panelButtons(resting, Boolean(autoBattle.settings.enabled), directionState, hiddenMentor)), `【操作面板】\n${location}${trace ? `\n\n${trace}` : ''}\n\n${nearby.description}${mapText}\n\n移动速度：${movement.speed} 格/秒\n单次步长：${movement.step} 格（上限 ${movement.maximum}）\n感知范围：${nearby.range}${nearby.perceptionObscured ? '\n> 压抑的黑暗干扰了你的感知' : ''}${targets}\n\n${directionTextFallback}｜/探索｜/背包｜/感知${hiddenMentor ? `｜/隐藏导师 ${hiddenMentor.professionCode}` : ''}`);
     }
   } catch (error) {
     logger.error({ err: error, userId: event.current.UserId }, 'open panel failed');
@@ -179,7 +179,7 @@ const showRestPanel = async (message: any, qqUserId: string, text: string) => {
   const [nearby, movement, trace, hiddenMentor] = await Promise.all([nearbyPoints(qqUserId), movementProfile(qqUserId), omniscientTraces(qqUserId), mapHiddenMentorAtCurrentCell(qqUserId)]); const resting = nearby.character.activity_status !== 'active';
   const autoBattle = await autoBattleConfig(qqUserId);
   const directionState = await environmentDirectionState(qqUserId);
-  const panel = outsidePanel('操作面板', currentLocationText(nearby.character), movement.step, nearby.range, Number(nearby.character.pos_x), Number(nearby.character.pos_y), text, nearby.points, resting, nearby.landmarks, trace ?? '', movement.maximum, nearby.perceptionObscured, movement.showLandmarks, movement.showPlayers, nearby.mapUnlocked, nearby.character.activity_status, true).addButtonGroup(panelButtons(resting, Boolean(autoBattle.settings.enabled), directionState, hiddenMentor));
+  const panel = outsidePanel('操作面板', currentLocationText(nearby.character), movement.step, nearby.range, Number(nearby.character.pos_x), Number(nearby.character.pos_y), text, nearby.points, resting, nearby.landmarks, trace ?? '', movement.maximum, nearby.perceptionObscured, movement.showLandmarks, movement.showPlayers, nearby.mapUnlocked, nearby.character.activity_status, true, movement.speed).addButtonGroup(panelButtons(resting, Boolean(autoBattle.settings.enabled), directionState, hiddenMentor));
   await sendWithTextFallback(message, panel, `【操作面板】\n${text}`);
 };
 export const restHandler = async () => { const [event] = useEvent(); const [message] = useMessage(); try { const result = await startRest(event.current.UserId); await showRestPanel(message, event.current.UserId, result.message); } catch (error) { await message.send({ format: messageFormat('无法休息', error instanceof Error ? error.message : '请稍后重试。') }); } };

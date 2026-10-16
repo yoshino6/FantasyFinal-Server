@@ -497,22 +497,22 @@ export const changeCharacterName = async (qqUserId: string, input: string) => wi
   if (Array.from(name).length < 2 || Array.from(name).length > 24 || /[\r\n]/.test(name)) throw new Error('昵称长度需为 2～24 个字符，且不能包含换行。');
   const characterId = await characterIdForChange(connection, qqUserId);
   const [before]=await connection.execute<(RowDataPacket&{name:string})[]>('SELECT name FROM characters WHERE id=? FOR UPDATE',[characterId]);
-  if(before[0]?.name===name)return {name,usedCard:false};
+  if(before[0]?.name===name)return {name,usedCard:false,unchanged:true};
   const usedCard = await consumeIdentityChange(connection, characterId, 'free_name_change_used', 'rename_card');
   await connection.execute('UPDATE characters SET name=? WHERE id=?', [name, characterId]);
   await recordCharacterOperation(connection,{characterId:Number(characterId),kind:'character.name_changed',source:{system:'character_identity',id:randomUUID(),step:'name_changed'},outcome:'改名',summary:`角色更名为${name}`,detail:{oldName:before[0]?.name??null,newName:name,usedCard}});
-  return { name, usedCard };
+  return { name, usedCard, unchanged: false };
 });
 
 export const changeCharacterGender = async (qqUserId: string, gender: string) => withTransaction(async connection => {
   if (gender !== '男' && gender !== '女') throw new Error('性别只能选择“男”或“女”。');
   const characterId = await characterIdForChange(connection, qqUserId);
   const [before]=await connection.execute<(RowDataPacket&{gender:string})[]>('SELECT gender FROM characters WHERE id=? FOR UPDATE',[characterId]);
-  if(before[0]?.gender===gender)return {gender,usedCard:false};
+  if(before[0]?.gender===gender)return {gender,usedCard:false,unchanged:true};
   const usedCard = await consumeIdentityChange(connection, characterId, 'free_gender_change_used', 'gender_change_card');
   await connection.execute('UPDATE characters SET gender=? WHERE id=?', [gender, characterId]);
   await recordCharacterOperation(connection,{characterId:Number(characterId),kind:'character.gender_changed',source:{system:'character_identity',id:randomUUID(),step:'gender_changed'},outcome:'更改',summary:`角色性别更改为${gender}`,detail:{oldGender:before[0]?.gender??null,newGender:gender,usedCard}});
-  return { gender, usedCard };
+  return { gender, usedCard, unchanged: false };
 });
 
 export const registerAdventurer = async (qqUserId: string) => withTransaction(async connection => {

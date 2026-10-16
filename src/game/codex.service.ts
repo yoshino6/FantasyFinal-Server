@@ -5,7 +5,7 @@ export const codexKinds = ['装备', '道具', '材料', '怪物', '技能'] as 
 export type CodexKind = (typeof codexKinds)[number];
 
 type CodexCategory = { label: string; value: string };
-type CodexEntry = { id: number; code?: string; name: string; category: string; detailId: string };
+type CodexEntry = { id: number; code?: string; name: string; category: string; rarity: string | null; detailId: string };
 type Character = RowDataPacket & { id: number; level: number };
 
 const categories: Record<CodexKind, CodexCategory[]> = {
@@ -30,8 +30,12 @@ const characterFor = async (qqUserId: string) => {
 };
 
 export const codexCategories = (kind: CodexKind) => categories[kind];
+const itemRarities = ['全部', '普通', '优秀', '精良', '稀有', '传说', '史诗', '神器'] as const;
+export const codexRarities = (kind: CodexKind): readonly string[] => kind === '怪物' || kind === '技能' ? ['全部'] : itemRarities;
 
-export const codexList = async (qqUserId: string, kind: CodexKind, category = '全部', page = 1, keyword = '') => {
+export const codexList = async (qqUserId: string, kind: CodexKind, category = '全部', page = 1, keyword = '', rarity = '全部', pageSize = 5) => {
+  if (!codexRarities(kind).includes(rarity)) throw new Error('未知图鉴稀有度。');
+  if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 20) throw new Error('每页数量无效。');
   const character = await characterFor(qqUserId); const pool = await getPool();
   const categoryName = categories[kind].some(item => item.value === category) ? category : '全部';
   const expression = categoryExpression(kind);
@@ -43,11 +47,13 @@ export const codexList = async (qqUserId: string, kind: CodexKind, category = '�
       : { from: 'FROM player_item_codex c JOIN item_definitions i ON i.id=c.item_id', where: 'c.character_id=? AND i.item_type=?', params: [character.id, itemType], id: 'i.id', name: 'i.name', detail: 'i.codex_id' };
   const conditions = [config.where]; const params: Array<number | string> = [...config.params];
   if (categoryName !== '全部') { conditions.push(`${expression}=?`); params.push(categoryName); }
+  if (rarity !== '全部') { conditions.push('i.rarity=?'); params.push(rarity); }
   if (keyword.trim()) { conditions.push(`${config.name} LIKE ?`); params.push(`%${keyword.trim()}%`); }
   const where = conditions.join(' AND '); const [countRows] = await pool.execute<(RowDataPacket & { total: number })[]>(`SELECT COUNT(*) AS total ${config.from} WHERE ${where}`, params);
-  const total = Number(countRows[0]?.total ?? 0); const pageSize = 5; const totalPages = Math.max(1, Math.ceil(total / pageSize)); const currentPage = Math.min(Math.max(1, Math.floor(page)), totalPages);
-  const [rows] = await pool.execute<(RowDataPacket & CodexEntry)[]>(`SELECT ${config.id} AS id,${config.name} AS name,${expression} AS category,${config.detail} AS detailId${kind === '技能' ? ',s.code AS code' : ''} ${config.from} WHERE ${where} ORDER BY ${config.id} LIMIT ? OFFSET ?`, [...params, String(pageSize), String((currentPage - 1) * pageSize)]);
-  return { kind, category: categoryName, keyword: keyword.trim(), entries: rows.map(row => ({ id: Number(row.id), ...(kind === '技能' ? { code: String(row.code) } : {}), name: row.name, category: row.category, detailId: String(row.detailId) })), page: currentPage, totalPages };
+  const total = Number(countRows[0]?.total ?? 0); const totalPages = Math.max(1, Math.ceil(total / pageSize)); const currentPage = Math.min(Math.max(1, Math.floor(page)), totalPages);
+  const rarityExpression = kind === '怪物' || kind === '技能' ? 'NULL' : 'i.rarity';
+  const [rows] = await pool.execute<(RowDataPacket & CodexEntry)[]>(`SELECT ${config.id} AS id,${config.name} AS name,${expression} AS category,${rarityExpression} AS rarity,${config.detail} AS detailId${kind === '技能' ? ',s.code AS code' : ''} ${config.from} WHERE ${where} ORDER BY ${config.id} LIMIT ? OFFSET ?`, [...params, String(pageSize), String((currentPage - 1) * pageSize)]);
+  return { kind, category: categoryName, rarity, keyword: keyword.trim(), entries: rows.map(row => ({ id: Number(row.id), ...(kind === '技能' ? { code: String(row.code) } : {}), name: row.name, category: row.category, rarity: row.rarity, detailId: String(row.detailId) })), page: currentPage, totalPages, total, pageSize };
 };
 
 export const skillCodexDetail = async (qqUserId: string, skillId: number) => {

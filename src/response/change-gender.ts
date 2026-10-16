@@ -7,6 +7,10 @@ export default async () => {
   const [event] = useEvent(); const [route] = useRoute(); const [message] = useMessage();
   try {
     const result = await changeCharacterGender(event.current.UserId, String(route.param('gender')));
+    if (result.unchanged) {
+      await message.send({ format: messageFormat('性别未发生变化', '所选性别与当前性别相同，未消耗免费次数或改性卡。') });
+      return;
+    }
     await message.send({ format: messageFormat('改性成功', `\n\n角色性别已修改为「${result.gender}」。${result.usedCard ? '已消耗一张改性卡。' : '\n\n已使用首次免费改性。'}`) });
   } catch (error) {
     logger.warn({ err: error, userId: event.current.UserId }, 'change character gender failed');

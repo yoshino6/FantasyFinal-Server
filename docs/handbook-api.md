@@ -17,10 +17,12 @@
 
 | 方法与路径 | 输入 | `data` |
 | --- | --- | --- |
-| `GET /handbook/codex` | `kind`（默认`装备`，可为`装备/道具/材料/怪物/技能`）、`category`（默认`全部`）、`keyword`、`page` | Core 已发现列表，含 `kinds,categories,kind,category,keyword,entries,page,totalPages,pageSize:5,scope:'discovered_only'`。条目里的 `detailId` 用于详情。 |
+| `GET /handbook/codex` | `kind`（默认`装备`，可为`装备/道具/材料/怪物/技能`）、`category`和`rarity`（默认`全部`）、`keyword`、`page`、`pageSize`（默认 5，整数 1–20） | Core 已发现列表，含 `kinds,categories,rarities,kind,category,rarity,keyword,entries,page,totalPages,total,pageSize,scope:'discovered_only'`。条目里的 `detailId` 用于详情，`rarity` 为真实物品稀有度或 `null`。 |
 | `GET /handbook/codex/:kind/:id` | `:id` 为列表的 `detailId` | `{kind,detailId,detail,actions:[]}`。怪物资料沿用 Core 鉴识等级限制；技能仅限已领悟或已发现；物品沿用已发现或商店公开权限。 |
 
 物品详情返回基础字段 `id,code,codexId,name,category,type,requiredLevel,description,obtainSource,weight`；技能返回基础战斗字段与效果文本。装备实例属性仍使用装备详情接口，图鉴基础字段不代表实例词条。
+
+分类、稀有度与关键词同时作用于本人已发现内容，先筛选再统计和分页。装备、道具、材料的 `rarities` 为 `全部/普通/优秀/精良/稀有/传说/史诗/神器`；怪物与技能没有稀有度字段，仅接受并返回 `全部`，条目 `rarity:null`，不会把怪物分类或技能位阶当作稀有度。
 
 ## 通缉
 

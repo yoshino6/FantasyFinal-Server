@@ -19,8 +19,8 @@ export const isLocalPosition = (point: unknown, requireRegion = false): point is
 };
 
 /** One bounded traversal serves both reachability and shortest route planning. */
-const localWalkTree = (origin: LocalMapPosition, cells: readonly LocalMapCell[], budget: number) => {
-  const allowed = new Map(cells.filter(cell => cell.passable && cell.z === origin.z && localDistance(origin, cell) <= budget).map(cell => [localPositionKey(cell), cell]));
+const localWalkTree = (origin: LocalMapPosition, cells: readonly LocalMapCell[], budget: number, radius = budget) => {
+  const allowed = new Map(cells.filter(cell => cell.passable && cell.z === origin.z && localDistance(origin, cell) <= radius).map(cell => [localPositionKey(cell), cell]));
   const start = localPositionKey(origin);
   const queue = [{ ...origin, depth: 0 }], previous = new Map<string, string>();
   const visited = new Set([start]);
@@ -40,17 +40,19 @@ const localWalkTree = (origin: LocalMapPosition, cells: readonly LocalMapCell[],
 };
 
 /** Mark the supplied perceived cells in one BFS, retaining real passability. */
-export const localReachableCells = (origin: LocalMapPosition, cells: readonly LocalMapCell[], moveRange: number, actionRange: number): ReachableLocalMapCell[] => {
+export const localReachableCells = (origin: LocalMapPosition, cells: readonly LocalMapCell[], moveRange: number, actionRange: number, pathBudget?: number): ReachableLocalMapCell[] => {
   const budget = Math.max(0, Math.floor(Math.min(moveRange, actionRange)));
-  const { visited } = localWalkTree(origin, cells, budget);
+  const steps = pathBudget === undefined ? budget : Math.max(0, Math.min(cells.length - 1, Math.floor(pathBudget)));
+  const { visited } = localWalkTree(origin, cells, steps, budget);
   return cells.map(cell => ({ ...cell, reachable: visited.has(localPositionKey(cell)) }));
 };
 
-/** Keep the entire route inside the initial perception and movement budget. */
-export const localShortestPath = (origin: LocalMapPosition, target: { x: number; y: number; z: number }, cells: readonly LocalMapCell[], moveRange: number, actionRange: number, knownTargets: readonly { x: number; y: number; z?: number; regionId?: number }[] = []): LocalMapCell[] => {
+/** A longer simple route never expands its initial authorised spatial radius. */
+export const localShortestPath = (origin: LocalMapPosition, target: { x: number; y: number; z: number }, cells: readonly LocalMapCell[], moveRange: number, actionRange: number, knownTargets: readonly { x: number; y: number; z?: number; regionId?: number }[] = [], pathBudget?: number): LocalMapCell[] => {
   if (!isLocalPosition(target)) throw new LocalExplorationError('INVALID_POSITION', '目标坐标必须是三个安全整数（x、y、z）。');
   if (target.z !== origin.z) throw new LocalExplorationError('WRONG_LAYER', '探索方格只能移动当前楼层。');
   const budget = Math.max(0, Math.floor(Math.min(moveRange, actionRange)));
+  const steps = pathBudget === undefined ? budget : Math.max(0, Math.min(cells.length - 1, Math.floor(pathBudget)));
   if (localDistance(origin, target) > budget) throw new LocalExplorationError('OUT_OF_RANGE', `目标超出当前可移动范围（${budget} 格）。`);
   if (localDistance(origin, target) === 0) return [];
   const destination = localPositionKey(target);
@@ -60,8 +62,8 @@ export const localShortestPath = (origin: LocalMapPosition, target: { x: number;
     && (point.z ?? origin.z) === origin.z && authorised.has(localPositionKey({ ...point, z: origin.z }))
     && (point.regionId === undefined || point.regionId === authorised.get(localPositionKey({ ...point, z: origin.z }))!.regionId))
     .map(point => localPositionKey({ ...point, z: origin.z })).filter(key => key !== startKey && key !== destination));
-  const preferred = avoid.size ? localWalkTree(origin, cells.filter(cell => !avoid.has(localPositionKey(cell))), budget) : undefined;
-  const { allowed, visited, previous, start } = preferred?.visited.has(destination) ? preferred : localWalkTree(origin, cells, budget);
+  const preferred = avoid.size ? localWalkTree(origin, cells.filter(cell => !avoid.has(localPositionKey(cell))), steps, budget) : undefined;
+  const { allowed, visited, previous, start } = preferred?.visited.has(destination) ? preferred : localWalkTree(origin, cells, steps, budget);
   if (!allowed.has(destination)) throw new LocalExplorationError('BLOCKED_TARGET', '目标位置当前无法通行。');
   if (!visited.has(destination)) throw new LocalExplorationError('NO_LOCAL_ROUTE', '当前移动范围内没有可通行的路线。');
   const path: LocalMapCell[] = [];

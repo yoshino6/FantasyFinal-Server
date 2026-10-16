@@ -295,6 +295,7 @@ export type DesktopPanel = AppMessage & {
     passwordLoginEnabled: boolean;
     hasCharacter: boolean;
     displayName: string;
+    avatarUrl: string | null;
   };
   summary?: {
     name: string;
@@ -1495,7 +1496,7 @@ export const pendingAppStory = async (qqUserId: string, hasCharacter: boolean, i
 
 export const appQuickPanel = async (session: AppSession): Promise<DesktopPanel> => {
   const qqUserId = await appSessionQqUser(session);
-  const [character, travel, encounter, battle, nearby, movement, inventory, autoPve, autoPvp, mining] = await Promise.all([
+  const [character, travel, encounter, battle, nearby, movement, inventory, autoPve, autoPvp, mining, avatarUrl] = await Promise.all([
     getCharacter(qqUserId),
     travelStatus(qqUserId).catch(() => null),
     currentEncounter(qqUserId).catch(() => null),
@@ -1506,7 +1507,8 @@ export const appQuickPanel = async (session: AppSession): Promise<DesktopPanel> 
     inventoryView(qqUserId, undefined, { updateCodex: false }).catch(() => null),
     autoBattleConfig(qqUserId, 'pve').catch(() => null),
     autoBattleConfig(qqUserId, 'pvp').catch(() => null),
-    resourceMiningStatus(qqUserId).catch(() => null)
+    resourceMiningStatus(qqUserId).catch(() => null),
+    import('./profile.service').then(({ readPlayerAvatar }) => readPlayerAvatar(session.playerId))
   ]);
   const [equipped, skillData] = await Promise.all([
     character
@@ -1616,7 +1618,8 @@ export const appQuickPanel = async (session: AppSession): Promise<DesktopPanel> 
       gameUserId: session.gameUserId,
       passwordLoginEnabled: session.passwordLoginEnabled,
       hasCharacter: Boolean(character),
-      displayName: session.displayName
+      displayName: session.displayName,
+      avatarUrl
     },
     ...(summary ? { summary } : {}),
     ...(mapData ? { mapData } : {}),

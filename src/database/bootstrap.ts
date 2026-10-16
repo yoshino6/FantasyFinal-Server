@@ -99,7 +99,7 @@ const seedDynamicAlchemyContent = async (pool: Pool) => {
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS players (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, qq_user_id VARCHAR(32) NOT NULL, app_login_id VARCHAR(32) NULL, qq_nickname VARCHAR(128) NULL,
-    password_hash VARCHAR(256) NULL, password_updated_at DATETIME NULL,
+    avatar_data_url TEXT NULL, password_hash VARCHAR(256) NULL, password_updated_at DATETIME NULL,
     failed_login_count SMALLINT UNSIGNED NOT NULL DEFAULT 0, locked_until DATETIME NULL, last_login_at DATETIME NULL,
     status ENUM('registering','active','banned') NOT NULL DEFAULT 'registering',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1758,6 +1758,9 @@ export const initializeSchema = async (pool: Pool) => {
       try { await pool.query(stmt); } catch (error: any) { if (error?.code !== 'ER_DUP_FIELDNAME' && error?.code !== 'ER_DUP_KEYNAME') throw error; }
     }
   }
+  // 本地上传的头像只保存服务端重编码后的有界 JPEG；旧库可重复补齐，不修改已有头像。
+  try { await pool.query('ALTER TABLE players ADD COLUMN avatar_data_url TEXT NULL AFTER qq_nickname'); }
+  catch (error: any) { if (error?.code !== 'ER_DUP_FIELDNAME') throw error; }
   // H5 的永久登录号不依赖角色 Game ID。DDL 与回填都可重复执行，启动中断后不会留下半完成迁移。
   try { await pool.query('ALTER TABLE players ADD COLUMN app_login_id VARCHAR(32) NULL AFTER qq_user_id'); }
   catch (error: any) { if (error?.code !== 'ER_DUP_FIELDNAME') throw error; }
@@ -3915,4 +3918,5 @@ export const initializeSchema = async (pool: Pool) => {
   await (await import('./map-hidden-advanced-professions')).initializeMapHiddenAdvancedProfessions(pool);
   await (await import('./map-environment')).initializeMapEnvironment(pool);
   await (await import('./map-surface-marks')).initializeMapSurfaceMarks(pool);
+  await (await import('./redeem-codes')).ensureRedeemCodeSchema(pool);
 };

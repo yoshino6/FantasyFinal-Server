@@ -54,6 +54,7 @@ import { createEnvironmentSpawnPicker } from './map-environment-spawn';
 import { environmentObjectCells } from './map-environment.config';
 import { surfaceSceneFor } from './map-surface-scene';
 import { groundWindowFor } from './map-ground-window';
+import { mappedSettlementFor, mappedSettlementRouteCells } from './mapped-settlement-surface';
 import { recordSurfaceTravelIn, recordSurfaceWalkIn } from './map-surface-marks.service';
 import { surfaceRegionEnabled } from './map-surface-marks.service';
 import { buildTravelVisual, travelObservationPoint, type TravelVisual } from './travel-visual';
@@ -2446,8 +2447,14 @@ export const localExplorationMap = async (qqUserId: string, db?: Pool | PoolConn
   const environment = travelView ? objects.map(object => ({ ...object, canClear: false, clearReason: '行进中仅可观察，请抵达后再清理。' })) : objects;
   const blocked = new Set(environment.filter(object => object.blocking).flatMap(environmentObjectCells).map(cell => `${cell.x}:${cell.y}:${cell.z}`));
   const navigable = cells.map(cell => ({ ...cell, passable: cell.passable && !blocked.has(`${cell.x}:${cell.y}:${cell.z}`) }));
+  const routeRadius = Math.max(0, Math.floor(range));
+  const pathBudget = Math.max(0, new Set(navigable.filter(cell => cell.passable && Number(cell.regionId) > 0 && cell.z === origin.z
+    && [cell.x, cell.y, cell.z].every(Number.isSafeInteger)
+    && Math.abs(cell.x - origin.x) + Math.abs(cell.y - origin.y) <= routeRadius).map(cell => `${cell.x}:${cell.y}:${cell.z}`)).size - 1);
   const surfaceScene = inHome ? undefined : await surfaceSceneFor(pool, origin, navigable, environment);
   const groundWindow = surfaceScene && !obscured && !inHome ? await groundWindowFor(pool, origin, range, surfaceScene, movement) : undefined;
+  const mappedSettlement = surfaceScene && !obscured && !inHome
+    ? await mappedSettlementFor(pool, origin, surfaceScene, { inHome, isDungeon: obscured }, () => hasRegionMap(pool, Number(character.id), origin.regionId)) : undefined;
   let nearby: { points: NearbyPoint[]; range: number; actionRange: number } | undefined;
   if (travelView) {
     const observer = { ...character, current_region_id: origin.regionId, pos_x: origin.x, pos_y: origin.y, pos_z: origin.z, region_name: travelView.position.regionName };
@@ -2455,11 +2462,12 @@ export const localExplorationMap = async (qqUserId: string, db?: Pool | PoolConn
     const result = await nearbyPointsForWindow(qqUserId, observer, pool, cells, true);
     nearby = { points: result.points, range: result.range, actionRange: result.actionRange };
   }
-  return { origin, range, actionRange, movement, environment, environmentJob: await environmentClearStatus(pool, Number(character.id)),
+  return { origin, range, actionRange, pathBudget, movement, environment, environmentJob: await environmentClearStatus(pool, Number(character.id)),
     ...(surfaceScene ? { surfaceScene } : {}),
     ...(groundWindow ? { groundWindow } : {}),
+    ...(mappedSettlement ? { mappedSettlement } : {}),
     ...(travelView && nearby ? { travelView, nearby } : {}),
-    cells: localReachableCells(origin, navigable, movement.step, actionRange).map(cell => travelView ? { ...cell, reachable: false } : cell) };
+    cells: localReachableCells(origin, navigable, routeRadius, routeRadius, pathBudget).map(cell => travelView ? { ...cell, reachable: false } : cell) };
 };
 
 /** QQ 与网页共用实际权限、迷宫墙和整格障碍判定，方向状态不触发游戏结算。 */
@@ -2502,10 +2510,25 @@ export const knownRouteTargetsFor = async (qqUserId: string, db: Pool | PoolConn
 
 export const localExplorationRoutePreview = async (qqUserId: string, x: number, y: number, z: number) => {
   const map = await localExplorationMap(qqUserId);
-  const knownTargets = await knownRouteTargetsFor(qqUserId, await getPool(), map);
-  const path = localShortestPath(map.origin, { x, y, z }, map.cells, map.movement.step, map.actionRange, knownTargets)
+  const pool = await getPool();
+  const settlement = !map.travelView && Math.abs(x - map.origin.x) + Math.abs(y - map.origin.y) > map.range
+    ? mappedSettlementRouteCells(map.mappedSettlement, map.origin, { x, y, z }, map.cells) : undefined;
+  let cells: LocalMapCell[] = map.cells;
+  let moveRange = map.range, pathBudget = map.pathBudget;
+  if (settlement) {
+    // Public ground may be visible beyond perception. Its route still uses
+    // today's complete obstacle footprints and every step rechecks on commit.
+    const character = await readLocalExplorationCharacter(pool, qqUserId);
+    const environment = await environmentForCells(pool, settlement.filter(cell => cell.passable), Number(character.id));
+    const blocked = new Set(environment.filter(object => object.blocking).flatMap(environmentObjectCells).map(cell => `${cell.x}:${cell.y}:${cell.z}`));
+    cells = settlement.map(cell => ({ ...cell, passable: cell.passable && !blocked.has(`${cell.x}:${cell.y}:${cell.z}`) }));
+    moveRange = Math.max(map.range, ...cells.map(cell => Math.abs(cell.x - map.origin.x) + Math.abs(cell.y - map.origin.y)));
+    pathBudget = Math.max(0, cells.filter(cell => cell.passable).length - 1);
+  }
+  const knownTargets = await knownRouteTargetsFor(qqUserId, pool, map, settlement ? [map.origin.regionId] : []);
+  const path = localShortestPath(map.origin, { x, y, z }, cells, moveRange, moveRange, knownTargets, pathBudget)
     .map(({ x: stepX, y: stepY, z: stepZ, regionId }) => ({ x: stepX, y: stepY, z: stepZ, regionId }));
-  return { origin: map.origin, sightRange: map.range, actionRange: map.actionRange, moveRange: map.movement.step, path, stepMilliseconds: 1000 / map.movement.speed };
+  return { origin: map.origin, sightRange: moveRange, actionRange: map.actionRange, moveRange, pathBudget, path, stepMilliseconds: 1000 / map.movement.speed };
 };
 
 const moveToPosition = async (connection: PoolConnection, qqUserId: string, x: number, y: number, restrictToPerception: boolean, speedLimit?: number, destinationRegionId?: number, allowRestingArrival = false, expectedFrom?: LocalMapPosition) => {

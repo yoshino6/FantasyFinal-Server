@@ -56,6 +56,9 @@ type WebNotificationRow = RowDataPacket & {
 
 let schemaReady: Promise<void> | undefined;
 
+// 收件箱与系统聊天共用此消息源，只展示正式通知；行动回执仍保留在库中。
+const inboxCategoryFilter = "category IN ('system','party','friend','mail','world')";
+
 const schemaSql = `CREATE TABLE IF NOT EXISTS web_notifications (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   player_id BIGINT UNSIGNED NOT NULL,
@@ -164,7 +167,7 @@ export const countUnreadWebNotifications = async (playerIdValueInput: number): P
   await ensureWebNotificationInbox();
   const db = await getPool();
   const [rows] = await db.execute<(RowDataPacket & { count: number })[]>(
-    'SELECT COUNT(*) AS count FROM web_notifications WHERE player_id=? AND read_at IS NULL',
+    `SELECT COUNT(*) AS count FROM web_notifications WHERE player_id=? AND ${inboxCategoryFilter} AND read_at IS NULL`,
     [playerIdValue(playerIdValueInput)]
   );
   return Number(rows[0]?.count ?? 0);
@@ -181,7 +184,7 @@ export const listWebNotifications = async (
   const limit = boundedLimit(options.limit);
   const beforeId = cursorValue(options.beforeId, '通知游标');
   const args: Array<number> = [playerId];
-  let where = 'player_id=?';
+  let where = `player_id=? AND ${inboxCategoryFilter}`;
   if (beforeId !== undefined) {
     where += ' AND id<?';
     args.push(beforeId);
@@ -213,7 +216,7 @@ export const listWebNotificationsAfter = async (
   const afterId = cursorValue(afterIdValue, '通知游标') ?? 0;
   const [rows] = await db.execute<WebNotificationRow[]>(
     `SELECT id,category,title,payload_json,created_at,read_at
-     FROM web_notifications WHERE player_id=? AND id>? ORDER BY id ASC LIMIT ?`,
+     FROM web_notifications WHERE player_id=? AND ${inboxCategoryFilter} AND id>? ORDER BY id ASC LIMIT ?`,
     [playerIdValue(playerIdValueInput), afterId, boundedLimit(limitValue)]
   );
   return rows.map(toNotification);
@@ -230,7 +233,7 @@ export const markWebNotificationsRead = async (playerIdValueInput: number, ids: 
   const db = await getPool();
   const [result] = await db.execute<ResultSetHeader>(
     `UPDATE web_notifications SET read_at=NOW()
-     WHERE player_id=? AND read_at IS NULL AND id IN (${uniqueIds.map(() => '?').join(',')})`,
+     WHERE player_id=? AND ${inboxCategoryFilter} AND read_at IS NULL AND id IN (${uniqueIds.map(() => '?').join(',')})`,
     [playerId, ...uniqueIds]
   );
   return Number(result.affectedRows);
@@ -240,7 +243,7 @@ export const markAllWebNotificationsRead = async (playerIdValueInput: number): P
   await ensureWebNotificationInbox();
   const db = await getPool();
   const [result] = await db.execute<ResultSetHeader>(
-    'UPDATE web_notifications SET read_at=NOW() WHERE player_id=? AND read_at IS NULL',
+    `UPDATE web_notifications SET read_at=NOW() WHERE player_id=? AND ${inboxCategoryFilter} AND read_at IS NULL`,
     [playerIdValue(playerIdValueInput)]
   );
   return Number(result.affectedRows);

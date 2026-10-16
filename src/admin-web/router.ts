@@ -8,6 +8,7 @@ import { createWebAdminAccount, loginAdminWeb, logoutAdminWeb, sessionForAdminWe
 import { adminDashboard, adminGameOperations, adminMails, adminPatrolEntities, adminPlayerDetail, adminPlayers, adminSearchSuggestions, adminWebJournals, adminWorldEvents, adminWorldOverview, changeGlobalMultiplierFromWeb, runWebPlayerAudit, sendWebMail } from '../game/admin-web-data.service';
 import { monitorSnapshot } from '../game/monitor.service';
 import { adminPortraitPreview, adminPortraitReviews, decidePortraitReview } from '../game/automaton-portrait-admin.service';
+import { registerRedeemAdminRoutes } from './redeem-routes';
 
 type Context = any;
 const cookieName = 'fantasyfinal_admin_session';
@@ -82,6 +83,7 @@ const api = async (ctx: Context, handler: (session: WebSession, body: Record<str
  * 默认前缀保留旧地址，server/index.ts 同时注册 /api/admin/v1 兼容入口。
  */
 export const registerAdminWebRoutes = (router: koaRouter, apiPrefix = '/api/admin') => {
+  registerRedeemAdminRoutes(router, apiPrefix, { auth, parseBody, apiError });
   const apiPath = (path: string) => `${apiPrefix}${path}`;
   if (apiPrefix === '/api/admin') {
     router.get(adminCoverPath, async (ctx: Context) => {

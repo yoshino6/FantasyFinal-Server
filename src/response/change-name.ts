@@ -7,6 +7,10 @@ export default async () => {
   const [event] = useEvent(); const [route] = useRoute(); const [message] = useMessage();
   try {
     const result = await changeCharacterName(event.current.UserId, String(route.param('name')));
+    if (result.unchanged) {
+      await message.send({ format: messageFormat('昵称未发生变化', '新昵称与当前昵称相同，未消耗免费次数或改名卡。') });
+      return;
+    }
     await message.send({ format: messageFormat('角色改名成功', `\n\n角色昵称已修改为「${result.name}」。${result.usedCard ? '已消耗一张改名卡。' : '\n\n已使用首次免费改名。'}`) });
   } catch (error) {
     logger.warn({ err: error, userId: event.current.UserId }, 'change character name failed');

@@ -5,7 +5,7 @@ import { achievementCategories } from '../game/achievement.config';
 import { achievementDetail, achievementList, achievementRewardsInDatabase, openAchievementBox } from '../game/achievement.service';
 import { achievementBoxes, type AchievementBoxKey } from '../game/achievement-rewards.config';
 import { itemCodex } from '../game/adventure.service';
-import { codexCategories, codexKinds, codexList, monsterCodexDetail, skillCodexDetail, type CodexKind } from '../game/codex.service';
+import { codexCategories, codexKinds, codexList, codexRarities, monsterCodexDetail, skillCodexDetail, type CodexKind } from '../game/codex.service';
 import { addWarrantReward, townWarrantsFor } from '../game/pvp.service';
 
 const characterIdFor = (session: AppSession) => {
@@ -68,15 +68,20 @@ const codexKindFrom = (value: unknown): CodexKind => {
   return kind as CodexKind;
 };
 
-export const handbookCodex = async (session: AppSession, query: { kind?: unknown; category?: unknown; page?: unknown; keyword?: unknown }) => {
+export const handbookCodex = async (session: AppSession, query: { kind?: unknown; category?: unknown; page?: unknown; keyword?: unknown; rarity?: unknown; pageSize?: unknown }) => {
   characterIdFor(session);
   const kind = codexKindFrom(query.kind ?? '装备');
   const category = textFrom(query.category ?? '全部', '子分类', 24) || '全部';
   const categories = codexCategories(kind);
   if (!categories.some(item => item.value === category)) throw new Error('未知图鉴子分类。');
+  const rarity = textFrom(query.rarity ?? '全部', '稀有度', 8) || '全部';
+  const rarities = codexRarities(kind);
+  if (!rarities.includes(rarity)) throw new Error('未知图鉴稀有度。');
+  const page = pageFrom(query.page);
+  const pageSize = query.pageSize === undefined ? 5 : positiveInteger(query.pageSize, '每页数量', 20);
   const keyword = textFrom(query.keyword, '关键词', 80);
-  const data = await codexList(await appSessionQqUser(session), kind, category, pageFrom(query.page), keyword);
-  return { ...data, kinds: codexKinds, categories, pageSize: 5, scope: 'discovered_only' as const };
+  const data = await codexList(await appSessionQqUser(session), kind, category, page, keyword, rarity, pageSize);
+  return { ...data, kinds: codexKinds, categories, rarities, scope: 'discovered_only' as const };
 };
 
 export const handbookCodexDetail = async (session: AppSession, kindValue: unknown, idValue: unknown) => {

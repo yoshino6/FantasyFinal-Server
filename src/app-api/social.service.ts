@@ -5,11 +5,12 @@ import { getPool, withTransaction } from '../database/pool';
 import { appSessionQqUser, type AppSession } from '../game/app-channel.service';
 import { createParty, joinParty, leaveParty, partyInfo, renameParty } from '../game/adventure.service';
 import { forestStoryPartyCondition, isForestStoryParty } from '../game/story-party';
-import { socialIdentities, type SocialPortrait } from './social-presentation';
+import { socialChatIdentities, socialIdentities, type SocialPortrait } from './social-presentation';
 
 type Db = Awaited<ReturnType<typeof getPool>> | PoolConnection;
 
 export type ChatChannel = {
+  avatarUrl?: string;
   portrait?: SocialPortrait;
   id: string;
   type: 'world' | 'friend' | 'party';
@@ -20,6 +21,8 @@ export type ChatChannel = {
 };
 
 export type ChatMessage = {
+  senderAvatarUrl?: string;
+  senderGameId?: number;
   senderPortrait?: SocialPortrait;
   id: number;
   channelId: string;
@@ -33,6 +36,7 @@ export type ChatMessage = {
 };
 
 export type PartyRecruitment = {
+  leaderAvatarUrl?: string;
   leaderPortrait?: SocialPortrait;
   id: number;
   partyId: string;
@@ -285,7 +289,7 @@ const recruitmentsByIds = async (session: AppSession, db: Db, ids: number[]) => 
   if (!ids.length) return new Map<number, PartyRecruitment>();
   const [rows] = await db.execute<RecruitmentRow[]>(`${recruitmentSelect} ${recruitmentFrom} WHERE r.id IN (${ids.map(() => '?').join(',')})`, [Number(session.characterId ?? 0), ...ids]);
   const identities = await socialIdentities(db, rows.map(row => Number(row.leader_game_id)));
-  return new Map(rows.map(row => [Number(row.id), { ...recruitmentView(row, session), leaderPortrait: identities.get(Number(row.leader_game_id))?.portrait }]));
+  return new Map(rows.map(row => [Number(row.id), { ...recruitmentView(row, session), leaderPortrait: identities.get(Number(row.leader_game_id))?.portrait, leaderAvatarUrl: identities.get(Number(row.leader_game_id))?.avatarUrl }]));
 };
 
 export const listChatChannels = async (session: AppSession): Promise<ChatChannel[]> => {
@@ -321,12 +325,17 @@ export const listChatMessages = async (session: AppSession, channelId: string, l
   args.push(limit);
   const [rows] = await pool.execute<(RowDataPacket & { id: number; sender_player_id: number; sender_character_id: number | null; sender_name: string; content: string; recruitment_id: number | null; created_at: Date | string })[]>(`SELECT id,sender_player_id,sender_character_id,sender_name,content,recruitment_id,created_at FROM web_chat_messages WHERE ${clause} ORDER BY id DESC LIMIT ?`, args);
   const cards = await recruitmentsByIds(session, pool, [...new Set(rows.map(row => Number(row.recruitment_id)).filter(id => Number.isSafeInteger(id) && id > 0))]);
-  const identities = await socialIdentities(pool, rows.map(row => Number(row.sender_character_id)), 'id');
-  return rows.reverse().map(row => ({
-    id: Number(row.id), channelId, senderId: Number(row.sender_player_id), senderName: text(row.sender_name, 64),
-    content: String(row.content), createdAt: new Date(row.created_at).toISOString(), own: Number(row.sender_player_id) === Number(session.playerId), senderPortrait: identities.get(Number(row.sender_character_id))?.portrait,
-    ...(row.recruitment_id && cards.has(Number(row.recruitment_id)) ? { recruitmentId: Number(row.recruitment_id), recruitment: cards.get(Number(row.recruitment_id)) } : {})
-  }));
+  const identities = await socialChatIdentities(pool, rows.map(row => Number(row.sender_character_id)));
+  const legacyIdentities = await socialChatIdentities(pool, rows.filter(row => !row.sender_character_id).map(row => Number(row.sender_player_id)), 'player_id');
+  return rows.reverse().map(row => {
+    const identity = row.sender_character_id ? identities.get(Number(row.sender_character_id)) : legacyIdentities.get(Number(row.sender_player_id));
+    return {
+      id: Number(row.id), channelId, senderId: Number(row.sender_player_id), senderName: identity?.name || text(row.sender_name, 64),
+      content: String(row.content), createdAt: new Date(row.created_at).toISOString(), own: Number(row.sender_player_id) === Number(session.playerId),
+      senderPortrait: identity?.portrait, senderAvatarUrl: identity?.avatarUrl, senderGameId: identity?.gameId,
+      ...(row.recruitment_id && cards.has(Number(row.recruitment_id)) ? { recruitmentId: Number(row.recruitment_id), recruitment: cards.get(Number(row.recruitment_id)) } : {})
+    };
+  });
 };
 
 export const sendChatMessage = async (session: AppSession, channelId: string, contentValue: unknown): Promise<ChatMessage> => {
@@ -340,9 +349,11 @@ export const sendChatMessage = async (session: AppSession, channelId: string, co
   const pool = await getPool();
   const channel = await assertChannelAccess(session, channelId, pool);
   const senderInfo = await sender(session, pool);
+  const identity = senderInfo.characterId ? (await socialChatIdentities(pool, [senderInfo.characterId])).get(senderInfo.characterId) : undefined;
   const [result] = await pool.execute<ResultSetHeader>('INSERT INTO web_chat_messages (channel_key,channel_type,sender_player_id,sender_character_id,sender_name,content) VALUES (?,?,?,?,?,?)', [channel.key, channel.type, Number(session.playerId), senderInfo.characterId, senderInfo.name, content]);
   const id = Number(result.insertId);
-  return { id, channelId, senderId: Number(session.playerId), senderName: senderInfo.name, content, createdAt: new Date().toISOString(), own: true };
+  return { id, channelId, senderId: Number(session.playerId), senderName: senderInfo.name, content, createdAt: new Date().toISOString(), own: true,
+    senderPortrait: identity?.portrait, senderAvatarUrl: identity?.avatarUrl, senderGameId: identity?.gameId };
 };
 
 const closeEndedRecruitments = async (db: Db) => {
@@ -377,7 +388,7 @@ export const currentWebParty = async (session: AppSession) => {
   await closeEndedRecruitments(pool);
   const [recruitmentRows] = await pool.execute<RecruitmentRow[]>(`${recruitmentSelect} ${recruitmentFrom}
     WHERE r.party_id=? AND r.status='open' AND r.expires_at>NOW() LIMIT 1`, [Number(session.characterId), party.id]);
-  const recruitment = recruitmentRows[0] ? { ...recruitmentView(recruitmentRows[0], session), leaderPortrait: leader?.portrait } : null;
+  const recruitment = recruitmentRows[0] ? { ...recruitmentView(recruitmentRows[0], session), leaderPortrait: leader?.portrait, leaderAvatarUrl: leader?.avatarUrl } : null;
   const [applicationRows] = recruitment
     ? await pool.execute<(RowDataPacket & { total: number })[]>("SELECT COUNT(*) AS total FROM web_party_applications WHERE recruitment_id=? AND status='pending'", [recruitment.id])
     : [[] as (RowDataPacket & { total: number })[]];
@@ -450,7 +461,7 @@ export const searchPartyRecruitments = async (session: AppSession, filters: {
     WHERE ${where.join(' AND ')} ORDER BY r.id DESC LIMIT ?`, [...args, limit + 1]);
   const hasMore = rows.length > limit;
   const identities = await socialIdentities(pool, rows.slice(0, limit).map(row => Number(row.leader_game_id)));
-  const items = rows.slice(0, limit).map(row => ({ ...recruitmentView(row, session), leaderPortrait: identities.get(Number(row.leader_game_id))?.portrait }));
+  const items = rows.slice(0, limit).map(row => ({ ...recruitmentView(row, session), leaderPortrait: identities.get(Number(row.leader_game_id))?.portrait, leaderAvatarUrl: identities.get(Number(row.leader_game_id))?.avatarUrl }));
   return { recruitments: items, hasMore, nextCursor: hasMore ? items[items.length - 1]?.id ?? null : null };
 };
 
