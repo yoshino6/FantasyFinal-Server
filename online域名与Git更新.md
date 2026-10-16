@@ -170,7 +170,7 @@ git -C /root/alx/workspace/bots/FantasyFinal-Server pull --ff-only origin main
 git -C /root/alx/workspace/bots/FantasyFinal-QQbot pull --ff-only origin main
 ~~~
 
-首次迁移或正常拉取后，均执行构建和 QQBot 编译产物同步：
+首次迁移或正常拉取后，分别在两个目录安装构建依赖并各自构建：
 
 ~~~bash
 (
@@ -179,20 +179,18 @@ git -C /root/alx/workspace/bots/FantasyFinal-QQbot pull --ff-only origin main
   qq_dir=/root/alx/workspace/bots/FantasyFinal-QQbot
 
   cd "$server_dir"
-  npm ci
+  npm ci --include=dev
   npm run build
   test -f lib/index.js
-  test -f lib/qq-gateway/index.js
 
   cd "$qq_dir"
-  npm ci
-  install -d lib/qq-gateway
-  cp -a "$server_dir/lib/qq-gateway/." lib/qq-gateway/
+  npm ci --include=dev
+  npm run build
   test -f lib/qq-gateway/index.js
 )
 ~~~
 
-QQBot 仓库当前没有独立的 `build` 脚本；其运行入口需要 `lib/qq-gateway/index.js`，上一步由 Server 构建产物提供。
+QQBot 仓库有独立的 `build` 脚本，`lib/qq-gateway/index.js` 由 QQBot 自身构建生成；不要从 Server 复制编译产物。
 
 ### 管理后台地址（首次切换域名时）
 

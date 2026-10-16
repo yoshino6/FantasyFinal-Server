@@ -188,21 +188,28 @@ sudo tar -xzf /var/backups/fantasyfinal-web/before-YYYYMMDD-HHMMSS.tar.gz -C /va
 | web/src、web/public、网页 CSS | web 的 npm.cmd run build | 不需要 |
 | server/src/app-api、聊天、队伍、WebSocket | server 的 npm run build | 需要 Server |
 | server/src 中 Core、游戏规则、管理后台 | server 的 npm run build | 需要 Server |
-| qqbot/src/qq-gateway | 重新生成并部署 qqbot/lib/qq-gateway | 需要 QQBot |
+| qqbot/src/qq-gateway | qqbot 的 npm run build | 需要 QQBot |
 | Nginx 配置、证书 | 不需要 Node 构建 | nginx -t 后 reload |
 
 server/index.js 加载 server/lib/index.js。只修改 server/src 或只刷新网页，不会让旧进程读取新服务端代码。
 
 ALX、PM2、手动 node index.js 只能选一种进程管理方式。不要在 ALX 或 PM2 已经运行时再次手动启动同一个 Server/QQBot，否则会出现 EADDRINUSE。
 
-Server 源码发布后：
+Server、QQBot 源码发布后，分别在各自目录构建：
 
 ~~~bash
 cd /root/alx/workspace/bots/FantasyFinal-Server
+npm ci --include=dev
 npm run build
+test -f lib/index.js
+
+cd /root/alx/workspace/bots/FantasyFinal-QQbot
+npm ci --include=dev
+npm run build
+test -f lib/qq-gateway/index.js
 ~~~
 
-构建成功后，通过正在使用的 ALX 或 PM2 重启。使用 PM2 时可执行 npm run start；不要再执行 node index.js。
+构建成功后，通过正在使用的 ALX 或 PM2 重启对应服务。使用 PM2 时可执行 npm run start；不要再执行 node index.js。
 
 ## 四、恢复域名 HTTPS 时的一次性准备
 
